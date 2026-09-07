@@ -1,0 +1,28 @@
+{
+  "features": [
+    "tmax",
+    "tmin",
+    "tmean",
+    "rh_mean",
+    "wind_speed_max",
+    "pressure_mean",
+    "solar_radiation_sum",
+    "cloud_cover_mean",
+    "tmax_lag1",
+    "tmax_lag2",
+    "tmax_lag3",
+    "tmin_lag1",
+    "tmin_lag2",
+    "tmin_lag3",
+    "tmax_departure",
+    "doy_sin",
+    "doy_cos"
+  ],
+  "target": "heatwave",
+  "prediction_type": "binary",
+  "severe_is_post_hoc_flag": true,
+  "optional_inactive_features": [
+    "wbgt",
+    "utci"
+  ]
+}
