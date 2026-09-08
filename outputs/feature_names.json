@@ -16,13 +16,12 @@
     "tmin_lag3",
     "tmax_departure",
     "doy_sin",
-    "doy_cos"
+    "doy_cos",
+    "wbgt",
+    "utci"
   ],
   "target": "heatwave",
   "prediction_type": "binary",
   "severe_is_post_hoc_flag": true,
-  "optional_inactive_features": [
-    "wbgt",
-    "utci"
-  ]
+  "optional_inactive_features": []
 }
