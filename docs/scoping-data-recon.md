@@ -76,9 +76,8 @@ known regional heatwave activity.
 
 ## Open items for the team
 
-- `wbgt` and `utci` are declared as placeholder features in
-  `heatwave_pipeline.py` (`OPTIONAL_THERMAL_FEATURES`) — whoever builds the
-  Heat Stress Index module should populate these and add them to
-  `ACTIVE_OPTIONAL_FEATURES` once ready.
+- The Heat Stress Index module now produces `wbgt` and `utci` separately. They
+  remain inactive in the binary heatwave classifier because the tested
+  19-feature version did not improve the selected XGBoost model.
 - Confirm whether other cities/states beyond Jaipur are in scope before
   more data is pulled.

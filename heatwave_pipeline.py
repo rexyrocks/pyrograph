@@ -19,8 +19,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 from xgboost import XGBClassifier
 
-from thermal.pipeline import run_thermal_pipeline
-
 
 RAW_FEATURES = [
     "tmax",
@@ -48,8 +46,7 @@ ENGINEERED_FEATURES = ["tmax_departure", "doy_sin", "doy_cos"]
 # ACTIVE_OPTIONAL_FEATURES. They are created as placeholder columns but are not
 # used while unavailable because RandomForestClassifier cannot fit all-NaN data.
 OPTIONAL_THERMAL_FEATURES = ["wbgt", "utci"]
-#changed this (assume this is a downwards arrow)
-ACTIVE_OPTIONAL_FEATURES: list[str] = ["wbgt", "utci"]
+ACTIVE_OPTIONAL_FEATURES: list[str] = []
 
 FEATURES = RAW_FEATURES + LAG_FEATURES + ENGINEERED_FEATURES + ACTIVE_OPTIONAL_FEATURES
 TARGET = "heatwave"
@@ -248,7 +245,7 @@ def save_artifacts(
         "target": TARGET,
         "prediction_type": "binary",
         "severe_is_post_hoc_flag": True,
-        "optional_inactive_features": [],
+        "optional_inactive_features": OPTIONAL_THERMAL_FEATURES,
     }
     (output_dir / "feature_names.json").write_text(
         json.dumps(feature_contract, indent=2) + "\n", encoding="utf-8"
@@ -293,12 +290,6 @@ def save_artifacts(
 def main() -> None:
     args = parse_args()
     raw = validate_and_load(args.data)
-
-    thermal = run_thermal_pipeline(args.data)
-    thermal_features = thermal[["date", "wbgt", "utci"]]
-
-    raw = raw.merge(thermal_features, on="date", how="left", validate="one_to_one")
-
     labeled = add_loyo_climatology(raw)
     featured = engineer_features(labeled)
     train, test = split_data(featured)
@@ -316,6 +307,7 @@ def main() -> None:
     )
 
     print(json.dumps({"selected_model": selected, "metrics": metrics}, indent=2))
+
 
 if __name__ == "__main__":
     main()

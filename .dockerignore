@@ -1,7 +1,9 @@
-.git
-.gitignore
-__pycache__
-*.py[cod]
-tests
-work
-outputs/*.zip
+*
+!Dockerfile
+!requirements-api.txt
+!backend/
+!backend/**
+!outputs/
+!outputs/best_heatwave_booster.json
+!outputs/feature_names.json
+!outputs/loyo_climatology_labels.csv

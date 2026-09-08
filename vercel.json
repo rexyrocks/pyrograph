@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "backend/vercel_app.py": {
+      "excludeFiles": "{frontend/**,data/**,docs/**,tests/**,thermal/**,work/**,__pycache__/**,outputs/evaluation_metrics.json,outputs/*feature_importances.csv,outputs/thermal_indices.csv,outputs/*.zip,outputs/*.pdf}"
+    }
+  }
+}

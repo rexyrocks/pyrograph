@@ -1,0 +1,13 @@
+[project]
+name = "heatshield-jaipur-api"
+version = "1.0.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "fastapi==0.141.1",
+  "numpy==2.2.4",
+  "pydantic==2.12.4",
+  "xgboost==3.4.1",
+]
+
+[tool.vercel]
+entrypoint = "backend.vercel_app:app"

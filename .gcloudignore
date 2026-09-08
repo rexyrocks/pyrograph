@@ -1,0 +1,17 @@
+# Keep Cloud Build uploads small and avoid sending training data or local state.
+.git/
+.vercel/
+__pycache__/
+*.py[cod]
+data/
+docs/
+frontend/
+tests/
+thermal/
+work/
+outputs/*
+!outputs/best_heatwave_booster.json
+!outputs/feature_names.json
+!outputs/loyo_climatology_labels.csv
+*.joblib
+*.zip

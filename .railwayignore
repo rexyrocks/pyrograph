@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!requirements-api.txt
+!railway.toml
+!backend/
+!backend/**
+!outputs/
+!outputs/best_heatwave_booster.json
+!outputs/feature_names.json
+!outputs/loyo_climatology_labels.csv

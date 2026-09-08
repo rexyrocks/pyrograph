@@ -158,17 +158,31 @@ app = FastAPI(
 cors_origins = [
     origin.strip()
     for origin in os.getenv(
-        "CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"
+        "CORS_ORIGINS",
+        (
+            "http://localhost:3000,http://localhost:5173,"
+            "https://heatshield-jaipur.vercel.app"
+        ),
     ).split(",")
     if origin.strip()
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _engineer_features(record: PredictionInput, climatology: Climatology) -> tuple[dict[str, float], tuple[float, float, float]]:
