@@ -135,45 +135,50 @@ a { color: inherit; text-decoration: none; }
 .forecast-prob i { position: absolute; height: 4px; top: -4px; left: 0; background: #ef6436; }
 .forecast-note { display: block; margin-top: 8px; color: #8b8173; }
 
-.map-section { padding-bottom: 82px; }
-.legend { display: flex; gap: 16px; color: #606a75; font-size: 12px; }
-.legend span { display: flex; align-items: center; gap: 6px; }
-.legend-dot { width: 9px; height: 9px; display: inline-block; border-radius: 50%; }
-.legend-dot.moderate { background: #f3b85c; }
-.legend-dot.high { background: #ec6b3f; }
-.legend-dot.severe { background: #b72f2f; }
+.impact-section { padding-bottom: 82px; }
 .prototype-notice { display: flex; align-items: center; gap: 10px; margin: -10px 0 18px; padding: 12px 14px; color: #604b24; background: #fff4d8; border: 1px solid #e7c878; font-size: 14px; line-height: 1.45; }
 .prototype-notice svg { flex: 0 0 auto; color: #b06c14; }
-.map-grid { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(280px,.65fr); border: 1px solid #d8d2c8; background: #fffdf8; }
-.map-card { min-height: 540px; position: relative; display: grid; place-items: center; background-color: #eee9df; background-image: linear-gradient(rgba(23,50,77,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(23,50,77,.045) 1px, transparent 1px); background-size: 30px 30px; border-right: 1px solid #d8d2c8; }
-.map-toolbar { position: absolute; z-index: 2; left: 20px; top: 18px; right: 20px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.map-toolbar > span { display: flex; align-items: center; gap: 7px; color: #596673; font-size: 12px; font-weight: 650; }
-.jaipur-map { width: min(500px,82%); height: 440px; overflow: visible; filter: drop-shadow(0 15px 22px rgba(42,45,45,.16)); }
-.ward { stroke: #fff9ee; stroke-width: 3; cursor: pointer; transition: filter .15s, opacity .15s; }
-.ward:hover { filter: brightness(1.07); }
-.selected-ward { stroke: #172335; stroke-width: 5; }
-.river-line { fill: none; stroke: #8cafb5; stroke-width: 6; stroke-dasharray: 3 8; opacity: .55; }
-.map-labels { fill: #fff; font-size: 10px; font-weight: 750; text-anchor: middle; text-shadow: 0 1px 2px rgba(0,0,0,.45); }
-.map-caption { position: absolute; bottom: 14px; color: #817b71; font-size: 10px; }
-.ward-panel { padding: 30px; display: flex; flex-direction: column; }
-.ward-panel-top { display: flex; justify-content: space-between; align-items: center; }
-.ward-panel .kicker { margin: 0; }
-.ward-panel h3 { margin: 18px 0 8px; font-size: 32px; letter-spacing: -.045em; }
-.ward-panel > p { margin: 0; color: #69727b; line-height: 1.55; font-size: 14px; }
-.ward-number { display: flex; align-items: center; gap: 13px; margin: 27px 0 12px; padding: 17px; color: #fff; background: #17324d; }
-.ward-number > svg { color: #f2b855; }
-.ward-number span { display: flex; flex-direction: column; }
-.ward-number small { color: #b9c8d4; font-size: 11px; }
-.ward-number b { font-size: 23px; }
-.ward-metrics { display: grid; gap: 0; border: 1px solid #e0d9ce; }
-.metric { display: flex; align-items: center; gap: 13px; padding: 13px; border-bottom: 1px solid #e0d9ce; }
-.metric:last-child { border-bottom: 0; }
-.metric-icon { width: 34px; height: 34px; display: grid; place-items: center; background: #f4ece1; color: #d85b32; }
-.metric-icon svg { width: 17px; }
-.metric > span:last-child { display: flex; flex: 1; justify-content: space-between; align-items: center; }
-.metric small { color: #727a80; }
-.metric b { font-size: 14px; }
-.ward-cta { margin-top: auto; justify-content: space-between; border-radius: 0; }
+.impact-grid { display: grid; grid-template-columns: minmax(300px,.8fr) minmax(420px,1.2fr); border: 1px solid #d8d2c8; background: #fffdf8; }
+.impact-score-card { padding: 30px; color: #fff; background: #17324d; }
+.impact-score-top { display: flex; align-items: center; justify-content: space-between; color: #bdcbd6; font-size: 13px; }
+.impact-score-top [data-slot='badge'] { color: #fff; border-color: rgba(255,255,255,.35); }
+.impact-number { margin: 38px 0 8px; font-size: clamp(76px,9vw,118px); font-weight: 700; letter-spacing: -.08em; line-height: .8; }
+.impact-number small { margin-left: 8px; color: #b9c7d2; font-size: 18px; letter-spacing: 0; }
+.impact-band { display: inline-flex; margin: 17px 0 34px; padding: 6px 10px; color: #172335; background: #f4c35d; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.impact-low { background: #bbdcc2; }
+.impact-moderate { background: #f4d78f; }
+.impact-high { background: #f3aa7e; }
+.impact-severe { color: #fff; background: #c7483e; }
+.component-scores { display: grid; gap: 19px; }
+.component-scores > div > span { display: flex; justify-content: space-between; margin-bottom: 8px; color: #c3d0d9; font-size: 12px; }
+.component-scores strong { color: #fff; }
+.component-scores i { display: block; height: 6px; overflow: hidden; background: rgba(255,255,255,.17); }
+.component-scores em { display: block; height: 100%; background: #f4c35d; }
+.formula-note { margin: 28px 0 0; padding-top: 20px; color: #afc0cd; border-top: 1px solid rgba(255,255,255,.16); font-size: 12px; line-height: 1.55; }
+.scenario-card { padding: 30px; }
+.scenario-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.scenario-heading h3, .impact-detail-grid h3 { margin: 0; font-size: 24px; letter-spacing: -.035em; }
+.scenario-card > p { margin: 10px 0 27px; color: #68737c; font-size: 13px; line-height: 1.5; }
+.demo-ward-picker { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; padding: 13px; background: #f3ede3; border: 1px solid #ded6ca; }
+.demo-ward-picker [data-slot='native-select-wrapper'] { width: min(100%, 270px); flex: 0 0 auto; background: #fffdf8; }
+.demo-ward-picker > span { color: #68737c; font-size: 12px; line-height: 1.4; }
+.scenario-control { margin-top: 22px; }
+.scenario-control > div { display: flex; justify-content: space-between; margin-bottom: 11px; font-size: 13px; }
+.scenario-control > div > span { font-weight: 650; }
+.scenario-control output { color: #d9572e; font-weight: 800; }
+.scenario-control [data-slot='slider-range'] { background: #ef6436; }
+.scenario-control [data-slot='slider-thumb'] { width: 16px; height: 16px; border-color: #ef6436; }
+.impact-detail-grid { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #d8d2c8; border-top: 0; background: #fffdf8; }
+.impact-detail-grid > article { padding: 28px 30px; }
+.impact-detail-grid > article:first-child { border-right: 1px solid #d8d2c8; }
+.driver-list, .trigger-list { list-style: none; margin: 23px 0 0; padding: 0; }
+.driver-list li { display: flex; align-items: center; justify-content: space-between; padding: 13px 0; border-top: 1px solid #e1dbd1; }
+.driver-list span { display: flex; flex-direction: column; gap: 3px; font-size: 13px; font-weight: 700; }
+.driver-list small { color: #737c83; font-size: 11px; font-weight: 400; }
+.driver-list b { color: #d9572e; }
+.trigger-list { display: grid; gap: 10px; }
+.trigger-list li { display: flex; align-items: center; gap: 11px; color: #53606a; font-size: 13px; line-height: 1.4; }
+.trigger-list svg { width: 18px; flex: 0 0 auto; color: #df5e34; }
 
 .guidance-section { padding: 76px 0; color: #fff; background: #162c43; }
 .section-heading.light { align-items: end; }
@@ -224,9 +229,9 @@ footer { padding: 28px 0; background: #fffdf8; }
 @media (max-width: 900px) {
   .hero-grid { grid-template-columns: 1fr; gap: 44px; }
   .temperature-panel { max-width: 560px; }
-  .map-grid { grid-template-columns: 1fr; }
-  .map-card { border-right: 0; border-bottom: 1px solid #d8d2c8; }
-  .ward-cta { margin-top: 24px; }
+  .impact-grid { grid-template-columns: 1fr; }
+  .impact-detail-grid { grid-template-columns: 1fr; }
+  .impact-detail-grid > article:first-child { border-right: 0; border-bottom: 1px solid #d8d2c8; }
   .action-grid { grid-template-columns: repeat(2,1fr); }
   .action-grid article:nth-child(2) { border-right: 0; }
   .action-grid article:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.18); }
@@ -259,12 +264,10 @@ footer { padding: 28px 0; background: #fffdf8; }
   .section-heading, .section-heading.light { align-items: flex-start; flex-direction: column; }
   .section-heading h2 { font-size: 34px; }
   .view-switcher { width: 100%; justify-content: space-between; }
-  .legend { flex-wrap: wrap; gap: 10px; }
-  .map-card { min-height: 440px; }
-  .map-toolbar > span { display: none; }
-  .map-toolbar { justify-content: flex-end; }
-  .jaipur-map { width: 95%; height: 380px; }
-  .ward-panel { padding: 24px; }
+  .impact-score-card, .scenario-card, .impact-detail-grid > article { padding: 23px; }
+  .impact-number { margin-top: 34px; }
+  .demo-ward-picker { align-items: stretch; flex-direction: column; }
+  .demo-ward-picker [data-slot='native-select-wrapper'] { width: 100%; }
   .guidance-section { padding: 56px 0; }
   .action-grid { grid-template-columns: 1fr; }
   .action-grid article { min-height: auto; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.18) !important; }

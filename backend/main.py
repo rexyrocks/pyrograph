@@ -16,6 +16,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.demographics import WardDemographicsCollection, load_ward_demographics
+from backend.risk import RiskAssessmentInput, RiskAssessmentOutput, assess_risk
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "outputs" / "best_heatwave_model.joblib"
@@ -287,3 +290,17 @@ def predict_batch(
             previous = None
         results.append(_predict(request, record, previous))
     return BatchPredictionOutput(count=len(results), predictions=results)
+
+
+@app.post("/risk/assess", response_model=RiskAssessmentOutput)
+def risk_assessment(payload: RiskAssessmentInput) -> RiskAssessmentOutput:
+    """Calculate an uncalibrated heat-health planning index."""
+
+    return assess_risk(payload)
+
+
+@app.get("/demographics/wards", response_model=WardDemographicsCollection)
+def ward_demographics() -> WardDemographicsCollection:
+    """Return validated synthetic records for integration testing."""
+
+    return load_ward_demographics()

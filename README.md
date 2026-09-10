@@ -53,6 +53,10 @@ The service provides:
 - `POST /predict` — one binary prediction with optional previous-day context
 - `POST /predict/batch` — chronological predictions with automatic two-day
   persistence checks; date gaps reset the persistence state
+- `POST /risk/assess` — transparent 0–100 heat-health planning index combining
+  heat hazard and aggregate demographic vulnerability
+- `GET /demographics/wards` — validated synthetic ward fixtures with explicit
+  missing fields and non-operational provenance
 
 Clients send the eight raw weather values and six lag values. The backend
 calculates the LOYO climatological normal, P95/P98 thresholds,
@@ -62,6 +66,12 @@ is triggered only after two consecutive predicted heatwave days.
 
 WBGT and UTCI are consumed separately by heat-stress and presentation layers;
 they are not required by the binary prediction endpoints.
+
+The planning index is explicitly uncalibrated and always returns
+`mortality_probability: null`. Annual state mortality totals are not treated as
+training labels for daily local mortality. See
+`docs/mortality-risk-index.md` for its formula, limitations, and calibration
+requirements.
 
 Artifact locations can be overridden with `HEATWAVE_MODEL_PATH`,
 `HEATWAVE_FEATURES_PATH`, and `HEATWAVE_CLIMATOLOGY_PATH`. Browser origins are

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Pyrograph Jaipur — Heatwave Early Warning',
   description:
-    'A clear, ward-level heat-risk dashboard for Jaipur with forecasts, alert reasoning, and protective guidance.',
+    'Jaipur heatwave forecasts with transparent impact scoring, action triggers, and protective guidance.',
 };
 
 export default function RootLayout({

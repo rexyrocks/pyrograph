@@ -5,7 +5,6 @@ import {
   Activity,
   ArrowRight,
   Building2,
-  ChevronRight,
   Clock3,
   Droplets,
   HeartPulse,
@@ -15,14 +14,14 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
-  ThermometerSun,
   TriangleAlert,
   Users,
-  Wind,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
+import { Slider } from '@/components/ui/slider';
 import {
   Sheet,
   SheetContent,
@@ -32,8 +31,10 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import demographicsCsv from '../../data/processed/fixtures_synthetic_wards.csv?raw';
 
 type Risk = 'Moderate' | 'High' | 'Severe';
+type ImpactBand = 'Low' | Risk;
 
 type OutlookItem = {
   day: string;
@@ -74,50 +75,149 @@ const fallbackOutlook: OutlookItem[] = [
   { day: 'Sat', date: '12 Sep', temperature: 40, probability: 38, risk: 'Moderate', note: 'Prototype fallback', normal: 39.1, p95: 42.0, p98: 44.5, persistenceMet: false },
 ];
 
-const wards = [
-  { id: 'amer', name: 'Amer', risk: 'High' as Risk, people: '42K', path: '75,24 150,12 192,52 176,112 99,105 58,70' },
-  { id: 'vkn', name: 'Vidhyadhar Nagar', risk: 'Severe' as Risk, people: '68K', path: '99,105 176,112 205,164 166,205 86,188 63,139' },
-  { id: 'city', name: 'Walled City', risk: 'Severe' as Risk, people: '91K', path: '166,205 205,164 276,171 296,224 248,267 179,260' },
-  { id: 'malviya', name: 'Malviya Nagar', risk: 'High' as Risk, people: '74K', path: '248,267 296,224 351,249 359,318 305,354 245,327' },
-  { id: 'sanganer', name: 'Sanganer', risk: 'Moderate' as Risk, people: '57K', path: '179,260 248,267 245,327 205,374 135,347 123,296' },
-  { id: 'jhotwara', name: 'Jhotwara', risk: 'High' as Risk, people: '61K', path: '86,188 166,205 179,260 123,296 60,272 38,220' },
-];
-
 const riskClass: Record<Risk, string> = {
   Moderate: 'risk-moderate',
   High: 'risk-high',
   Severe: 'risk-severe',
 };
 
-const mapFill: Record<Risk, string> = {
-  Moderate: '#f3b85c',
-  High: '#ec6b3f',
-  Severe: '#b72f2f',
+type VulnerabilityProfile = {
+  olderAdults: number;
+  youngChildren: number;
+  outdoorWorkers: number;
+  informalHousing: number;
+  deprivation: number;
 };
 
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+type DemoWard = {
+  wardId: string;
+  population: number;
+  olderAdults: number;
+  youngChildren: number;
+  outdoorWorkers: number | null;
+  informalHousing: number | null;
+};
+
+function parseDemoWards(csv: string): DemoWard[] {
+  return csv.trim().split('\n').slice(1).map((line) => {
+    const [wardId, population, olderAdults, youngChildren, outdoorWorkers, informalHousing] = line.split(',');
+    return {
+      wardId,
+      population: Number(population),
+      olderAdults: Number(olderAdults),
+      youngChildren: Number(youngChildren),
+      outdoorWorkers: outdoorWorkers === '' ? null : Number(outdoorWorkers),
+      informalHousing: informalHousing === '' ? null : Number(informalHousing),
+    };
+  });
+}
+
+const demoWards = parseDemoWards(demographicsCsv);
+
+const defaultVulnerability: VulnerabilityProfile = {
+  olderAdults: 9,
+  youngChildren: 10,
+  outdoorWorkers: 31,
+  informalHousing: 18,
+  deprivation: 52,
+};
+
+const vulnerabilityFactors = [
+  { key: 'olderAdults' as const, label: 'Older adults', weight: 0.25, referenceHigh: 25 },
+  { key: 'youngChildren' as const, label: 'Children under five', weight: 0.15, referenceHigh: 15 },
+  { key: 'outdoorWorkers' as const, label: 'Outdoor workers', weight: 0.20, referenceHigh: 50 },
+  { key: 'informalHousing' as const, label: 'Informal housing', weight: 0.25, referenceHigh: 40 },
+  { key: 'deprivation' as const, label: 'Social deprivation', weight: 0.15, referenceHigh: 100 },
+];
+
+function calculateImpact(
+  probability: number,
+  severe: boolean,
+  persistenceMet: boolean | null,
+  profile: VulnerabilityProfile,
+) {
+  const hazard = Math.min(100, probability * 0.82 + (severe ? 10 : 0) + (persistenceMet === true ? 8 : 0));
+  const contributions = vulnerabilityFactors.map((factor) => ({
+    label: factor.label,
+    value: profile[factor.key],
+    contribution: Math.min(profile[factor.key] / factor.referenceHigh, 1) * factor.weight * 100,
+  }));
+  const vulnerability = contributions.reduce((sum, factor) => sum + factor.contribution, 0);
+  const index = Math.min(100, hazard * 0.7 + vulnerability * 0.3);
+  const band: ImpactBand = index < 30 ? 'Low' : index < 50 ? 'Moderate' : index < 70 ? 'High' : 'Severe';
+  return {
+    index: Math.round(index * 10) / 10,
+    hazard: Math.round(hazard * 10) / 10,
+    vulnerability: Math.round(vulnerability * 10) / 10,
+    band,
+    drivers: contributions.sort((a, b) => b.contribution - a.contribution).slice(0, 3),
+  };
+}
+
+function ScenarioSlider({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
   return (
-    <div className="metric">
-      <span className="metric-icon">{icon}</span>
-      <span>
-        <small>{label}</small>
-        <strong>{value}</strong>
-      </span>
+    <div className="scenario-control">
+      <div><span>{label}</span><output>{value}%</output></div>
+      <Slider
+        aria-label={label}
+        min={0}
+        max={100}
+        step={1}
+        value={[value]}
+        onValueChange={(nextValue) => onChange(Array.isArray(nextValue) ? nextValue[0] : nextValue)}
+      />
     </div>
   );
 }
 
 export default function Home() {
   const [selectedDay, setSelectedDay] = useState(0);
-  const [selectedWard, setSelectedWard] = useState('city');
+  const [vulnerabilityProfile, setVulnerabilityProfile] = useState(defaultVulnerability);
+  const [selectedDemoWard, setSelectedDemoWard] = useState('');
   const [outlook, setOutlook] = useState<OutlookItem[]>(fallbackOutlook);
   const [apiStatus, setApiStatus] = useState<'loading' | 'live' | 'fallback'>('loading');
   const [updatedAt, setUpdatedAt] = useState('Loading live outlook…');
   const selected = outlook[selectedDay];
-  const ward = useMemo(
-    () => wards.find((item) => item.id === selectedWard) ?? wards[2],
-    [selectedWard],
+  const demoWard = useMemo(
+    () => demoWards.find((ward) => ward.wardId === selectedDemoWard) ?? null,
+    [selectedDemoWard],
   );
+  const impact = useMemo(
+    () => calculateImpact(
+      selected.probability,
+      selected.risk === 'Severe',
+      selected.persistenceMet,
+      vulnerabilityProfile,
+    ),
+    [selected, vulnerabilityProfile],
+  );
+
+  const updateVulnerability = (key: keyof VulnerabilityProfile, value: number) => {
+    setVulnerabilityProfile((current) => ({ ...current, [key]: value }));
+  };
+
+  const loadDemoWard = (wardId: string) => {
+    setSelectedDemoWard(wardId);
+    const ward = demoWards.find((candidate) => candidate.wardId === wardId);
+    if (!ward || ward.outdoorWorkers === null || ward.informalHousing === null) return;
+    const outdoorWorkers = ward.outdoorWorkers;
+    const informalHousing = ward.informalHousing;
+    setVulnerabilityProfile((current) => ({
+      ...current,
+      olderAdults: ward.olderAdults,
+      youngChildren: ward.youngChildren,
+      outdoorWorkers,
+      informalHousing,
+    }));
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -178,7 +278,7 @@ export default function Home() {
 
         <nav className="desktop-nav" aria-label="Primary navigation">
           <a className="active" href="#overview">Overview</a>
-          <a href="#map">Ward map</a>
+          <a href="#impact">Impact index</a>
           <a href="#guidance">Guidance</a>
         </nav>
 
@@ -301,71 +401,103 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="map" className="map-section section-block">
+        <section id="impact" className="impact-section section-block">
           <div className="section-heading">
-            <div><span className="kicker">Hyperlocal view</span><h2>Where risk is highest</h2></div>
-            <div className="legend" aria-label="Risk legend">
-              <span><i className="legend-dot moderate" />Moderate</span>
-              <span><i className="legend-dot high" />High</span>
-              <span><i className="legend-dot severe" />Severe</span>
+            <div>
+              <span className="kicker">Population impact</span>
+              <h2>Heat-health planning index</h2>
+              <p className="weather-source">Prototype impact-index-v1 · Selected forecast day and aggregate scenario inputs</p>
             </div>
+            <Badge variant="outline">Auditable formula</Badge>
           </div>
 
           <div className="prototype-notice" role="note">
             <Info size={17} />
-            <span><b>Illustrative ward data — not model-generated.</b> The live ML outlook currently applies to Jaipur city as a whole.</span>
+            <span><b>This is not mortality probability.</b> It is an uncalibrated planning index. Suitable daily local health outcomes are still required before mortality probability can be trained or validated.</span>
           </div>
 
-          <div className="map-grid">
-            <div className="map-card">
-              <div className="map-toolbar">
-                <span><MapPin size={15} /> Select a ward for local guidance</span>
+          <div className="impact-grid">
+            <article className="impact-score-card">
+              <div className="impact-score-top">
+                <span>Planning index</span>
                 <Badge variant="outline">{outlook[selectedDay].day} · {outlook[selectedDay].date}</Badge>
               </div>
-              <svg className="jaipur-map" viewBox="0 0 400 410" aria-label="Illustrative Jaipur ward risk map">
-                <title>Illustrative Jaipur ward risk map</title>
-                <path className="river-line" d="M20 356 C102 312, 126 385, 215 350 S329 275, 392 302" />
-                {wards.map((item) => (
-                  <path
-                    key={item.id}
-                    d={`M${item.path} Z`}
-                    fill={mapFill[item.risk]}
-                    className={selectedWard === item.id ? 'ward selected-ward' : 'ward'}
-                    onClick={() => setSelectedWard(item.id)}
-                    tabIndex={0}
-                    aria-label={`${item.name}, ${item.risk} risk`}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') setSelectedWard(item.id);
-                    }}
-                  />
-                ))}
-                <g className="map-labels" pointerEvents="none">
-                  <text x="111" y="66">Amer</text>
-                  <text x="101" y="151">Vidhyadhar</text>
-                  <text x="207" y="220">Walled City</text>
-                  <text x="282" y="304">Malviya</text>
-                  <text x="160" y="327">Sanganer</text>
-                  <text x="66" y="239">Jhotwara</text>
-                </g>
-              </svg>
-              <span className="map-caption">Illustrative ward geometry for prototype interface</span>
-            </div>
+              <div className="impact-number">{impact.index}<small>/100</small></div>
+              <span className={`impact-band impact-${impact.band.toLowerCase()}`}>{impact.band} planning priority</span>
+              <div className="component-scores">
+                <div>
+                  <span><b>Heat hazard</b><strong>{impact.hazard}</strong></span>
+                  <i><em style={{ width: `${impact.hazard}%` }} /></i>
+                </div>
+                <div>
+                  <span><b>Vulnerability</b><strong>{impact.vulnerability}</strong></span>
+                  <i><em style={{ width: `${impact.vulnerability}%` }} /></i>
+                </div>
+              </div>
+              <p className="formula-note">70% heat hazard + 30% demographic vulnerability. Severe and two-day persistence checks modify the hazard component.</p>
+            </article>
 
-            <aside className="ward-panel">
-              <div className="ward-panel-top">
-                <span className="kicker">Selected ward</span>
-                <span className={`risk-pill ${riskClass[ward.risk]}`}>{ward.risk}</span>
+            <article className="scenario-card">
+              <div className="scenario-heading">
+                <div><span className="kicker">Scenario controls</span><h3>Test aggregate vulnerability</h3></div>
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedDemoWard(''); setVulnerabilityProfile(defaultVulnerability); }}>Reset</Button>
               </div>
-              <h3>{ward.name}</h3>
-              <p>Dense built-up areas and limited afternoon shade increase exposure here.</p>
-              <div className="ward-number"><Users /><span><small>Estimated people exposed</small><b>{ward.people}</b></span></div>
-              <div className="ward-metrics">
-                <Metric icon={<ThermometerSun />} label="Feels like" value="47°C" />
-                <Metric icon={<Droplets />} label="Humidity" value="28%" />
-                <Metric icon={<Wind />} label="Max wind" value="18 km/h" />
+              <p>Load a Gemini-prepared synthetic fixture or adjust the values. These are not official Jaipur demographic estimates.</p>
+              <div className="demo-ward-picker">
+                <NativeSelect
+                  aria-label="Load a synthetic ward fixture"
+                  value={selectedDemoWard}
+                  onChange={(event) => loadDemoWard(event.target.value)}
+                >
+                  <NativeSelectOption value="">Manual demonstration scenario</NativeSelectOption>
+                  {demoWards.map((ward) => (
+                    <NativeSelectOption
+                      key={ward.wardId}
+                      value={ward.wardId}
+                      disabled={ward.outdoorWorkers === null || ward.informalHousing === null}
+                    >
+                      {ward.wardId}{ward.outdoorWorkers === null || ward.informalHousing === null ? ' · incomplete' : ''}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+                {demoWard && (
+                  <span>
+                    Synthetic population: {demoWard.population.toLocaleString('en-IN')}
+                  </span>
+                )}
               </div>
-              <Button variant="outline" className="ward-cta">View ward response plan <ChevronRight /></Button>
-            </aside>
+              <ScenarioSlider label="Older adults" value={vulnerabilityProfile.olderAdults} onChange={(value) => updateVulnerability('olderAdults', value)} />
+              <ScenarioSlider label="Children under five" value={vulnerabilityProfile.youngChildren} onChange={(value) => updateVulnerability('youngChildren', value)} />
+              <ScenarioSlider label="Outdoor workers" value={vulnerabilityProfile.outdoorWorkers} onChange={(value) => updateVulnerability('outdoorWorkers', value)} />
+              <ScenarioSlider label="Informal housing" value={vulnerabilityProfile.informalHousing} onChange={(value) => updateVulnerability('informalHousing', value)} />
+              <ScenarioSlider label="Social deprivation index" value={vulnerabilityProfile.deprivation} onChange={(value) => updateVulnerability('deprivation', value)} />
+            </article>
+          </div>
+
+          <div className="impact-detail-grid">
+            <article>
+              <span className="kicker">What drives the score</span>
+              <h3>Top vulnerability contributors</h3>
+              <ol className="driver-list">
+                {impact.drivers.map((driver) => (
+                  <li key={driver.label}>
+                    <span>{driver.label}<small>Scenario value {driver.value}%</small></span>
+                    <b>+{driver.contribution.toFixed(1)}</b>
+                  </li>
+                ))}
+              </ol>
+            </article>
+            <article>
+              <span className="kicker">Municipal trigger</span>
+              <h3>Actions for {impact.band.toLowerCase()} priority</h3>
+              <ul className="trigger-list">
+                <li><ShieldCheck /> Monitor the forecast and verify response contacts.</li>
+                {impact.index >= 30 && <li><Droplets /> Confirm water points, cooling spaces, and outreach teams.</li>}
+                {impact.index >= 50 && <li><Clock3 /> Shift outdoor municipal work away from afternoon peak heat.</li>}
+                {impact.index >= 50 && <li><Users /> Issue guidance for vulnerable population groups.</li>}
+                {impact.index >= 70 && <li><Building2 /> Activate health-facility readiness and incident review.</li>}
+              </ul>
+            </article>
           </div>
         </section>
       </div>

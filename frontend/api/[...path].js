@@ -1,5 +1,7 @@
 const ROUTES = new Map([
   ['health', new Set(['GET'])],
+  ['demographics/wards', new Set(['GET'])],
+  ['risk/assess', new Set(['POST'])],
 ]);
 
 const MAX_BODY_BYTES = 512 * 1024;
