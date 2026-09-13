@@ -73,6 +73,25 @@ rules, and a secrets-backed provider adapter are required before real delivery.
 
 ## Verification
 
+Run the local production-entrypoint rehearsal:
+
+```bash
+python3 -m scripts.rehearse_demo
+```
+
+It exercises simulated delivery, idempotent replay, duplicate suppression,
+failure after two attempts, acknowledgement and escalation eligibility after
+advancing an injected clock by six minutes. Re-entering application lifespan
+resets in-memory records; the previous workflow returns 404. Provider and clock
+injection exist only in this harness, not as remotely callable controls. No
+network sockets or real messages are used. The JSON includes delivery receipts,
+`real_delivery_enabled: false`, and storage labels.
+
+There is no operations console in the frontend. Demonstrate these API calls
+and disclose the reset behavior. Role strings remain demonstration inputs,
+not authenticated operator identities. The public operations proxy should
+remain disabled for a real municipal process.
+
 Run the complete suite offline:
 
 ```bash

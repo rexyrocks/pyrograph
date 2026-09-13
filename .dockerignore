@@ -3,6 +3,9 @@
 !requirements-api.txt
 !backend/
 !backend/**
+!data/
+!data/processed/
+!data/processed/fixtures_synthetic_wards.csv
 !outputs/
 !outputs/best_heatwave_booster.json
 !outputs/feature_names.json

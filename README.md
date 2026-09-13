@@ -1,29 +1,35 @@
 # SIH26083 — Extreme Heatwave Early Warning System
 
-Classical machine-learning training pipeline for binary daily heatwave detection
-in Jaipur. It trains Random Forest and XGBoost models, compares them by CSI, and
-saves the better model together with its exact inference feature contract.
+Preliminary Jaipur heat-hazard classifier and uncalibrated planning-index demo.
+The current serving model is from the legacy retrospective experiment. Its
+metrics do not establish advance forecast skill, mortality risk or statewide
+validity. A corrected evaluation is now available separately.
 
 ## Run
 
 ```bash
 python3 heatwave_pipeline.py \
   --data /path/to/jaipur_daily_2015_2024.csv \
-  --output-dir outputs
+  --output-dir work/retrospective-v2
 ```
 
-The training period is 2015–2022 and the test period is 2023–2024. The first
-three records are excluded after lag creation. Labels use a circular calendar
-day ±7-day leave-one-year-out climatology: P95 defines `heatwave`, while P98
-defines the separate post-hoc `severe` flag. No persistence rule is included in
-training.
+The corrected evaluation fixes the climate reference to 2015–2018, trains on
+2019–2021, selects on 2022, and tests only the selected model on 2023–2024.
+It uses realised daily weather and a short ±7-day percentile reference. The
+period has been inspected in earlier experiments; fresh external validation is
+still required. This command writes a report and does not replace serving
+artifacts. See `docs/evaluation-retrospective-v2.json` and `docs/demo-readiness.md`.
 
 `wbgt` and `utci` are produced by the separate `thermal` pipeline for heat-stress
 reporting and dashboard use. They intentionally remain outside the 17-feature
-heatwave classifier because adding them did not improve the selected XGBoost
-model's test CSI, recall, precision, or F1.
+heatwave classifier. Earlier feature decisions used the legacy experiment's
+test period and must not be represented as independent final validation.
 
-## Outputs
+## Legacy serving artifacts in outputs/
+
+These are retained for reproducibility. Their original LOYO preprocessing
+included held-out years in training climatology and used test CSI to select
+the model. `evaluation_metrics.json` explicitly records those limitations.
 
 - `best_heatwave_model.joblib` — model selected by highest test CSI
 - `feature_names.json` — exact ordered inference features
@@ -42,7 +48,7 @@ On macOS, XGBoost also requires the OpenMP runtime (`brew install libomp`).
 Start the API from the project directory:
 
 ```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 Interactive API documentation is available at `http://localhost:8000/docs`.
@@ -90,12 +96,13 @@ Run the backend tests with:
 python3 -m unittest -v
 ```
 
-A deployment-ready `Dockerfile` includes XGBoost's Linux OpenMP dependency.
+The `Dockerfile` includes Linux OpenMP and the synthetic demographic fixture.
+Run `python3 -m scripts.smoke_image` on a Docker-enabled machine before release.
 
 ## Production architecture
 
 The application is deployed across Vercel (Frontend) and Railway (Backend).
-The browser can request only the cached, read-only five-day outlook. A Vercel
+The browser requests the five-day outlook and the shared planning-index API. A Vercel
 server function fetches Open-Meteo data and calls Railway's authenticated batch
 predictor; the Railway key is never exposed to browser JavaScript. Generic
 public prediction proxy routes are deliberately disabled.
@@ -112,14 +119,20 @@ public prediction proxy routes are deliberately disabled.
 ### Open-Meteo Integration & Lag Bootstrapping
 
 The Vercel proxy fetches live weather data for Jaipur (26.91°N, 75.79°E) from Open-Meteo:
-1. **Historical Weather API**: Fetches the past 3 days of observations to construct true historical lag features (`tmax_lag1/2/3`, `tmin_lag1/2/3`) for Day 1 of the outlook.
+1. **Historical Weather API**: Fetches the past 3 days of gridded analysis/reanalysis to construct historical lag features (`tmax_lag1/2/3`, `tmin_lag1/2/3`) for Day 1. These are not necessarily station observations; availability depends on the upstream model.
 2. **Forecast API**: Fetches the raw weather values for the 5-day outlook.
 
 The pressure input uses Open-Meteo's `surface_pressure_mean` (not sea-level
 pressure) because it matches the approximately 960 hPa distribution used to
 train the Jaipur model at the city's elevation.
 
-**Known Limitation - Lag Bootstrapping**: Because the model strictly requires 3 days of lag features (previous day temperatures), Day 1 uses true historical observations. For Days 2–5, the preceding days are in the future, so the Vercel helper **bootstraps** their lag features by feeding the prior days' *forecasted* temperatures into the subsequent days' lag inputs. This allows all 5 days to be run through the live model prediction.
+**Known limitation — lag bootstrapping:** Day 1 uses historical analysis values. Days 2–5 use preceding forecast temperatures as lag inputs. Lead-time performance has not been validated. Day 1 persistence remains unknown when no prior-day classification is supplied.
+
+The frontend distinguishes live, loading/unavailable and explicit synthetic
+sample modes. Forecasts older than 30 minutes, incorrect dates and malformed
+responses are rejected. The page refreshes every minute and uses the risk API
+at full input precision. Municipal operations are demonstrated via the local
+API rehearsal; the page does not claim an implemented operations console.
 
 ## Legacy Google Cloud Run deployment
 

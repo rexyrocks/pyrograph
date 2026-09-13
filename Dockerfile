@@ -15,6 +15,7 @@ COPY requirements-api.txt ./
 RUN pip install --no-cache-dir -r requirements-api.txt
 
 COPY backend ./backend
+COPY data/processed/fixtures_synthetic_wards.csv ./data/processed/fixtures_synthetic_wards.csv
 COPY outputs/best_heatwave_booster.json ./outputs/best_heatwave_booster.json
 COPY outputs/feature_names.json ./outputs/feature_names.json
 COPY outputs/loyo_climatology_labels.csv ./outputs/loyo_climatology_labels.csv

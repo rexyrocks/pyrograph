@@ -1,0 +1,108 @@
+{
+  "evaluation_version": "fixed-reference-retrospective-v2",
+  "status": "preliminary_retrospective_not_forecast_skill",
+  "serving_model_replaced": false,
+  "climate_reference": "2015-2018, fixed before fitting and evaluation",
+  "split": {
+    "train": "2019-2021",
+    "selection": "2022",
+    "test": "2023-2024"
+  },
+  "rows": {
+    "train": 1096,
+    "selection": 365,
+    "test": 731
+  },
+  "selected_model": "xgboost",
+  "selection_metric": "CSI; F1 then name as deterministic tie-breakers",
+  "selection_metrics": {
+    "random_forest": {
+      "precision": 0.8387096774193549,
+      "recall": 0.7428571428571429,
+      "f1": 0.7878787878787878,
+      "csi": 0.65,
+      "confusion_matrix": [
+        [
+          325,
+          5
+        ],
+        [
+          9,
+          26
+        ]
+      ],
+      "confusion_matrix_labels": [
+        [
+          "TN",
+          "FP"
+        ],
+        [
+          "FN",
+          "TP"
+        ]
+      ]
+    },
+    "xgboost": {
+      "precision": 0.7948717948717948,
+      "recall": 0.8857142857142857,
+      "f1": 0.8378378378378378,
+      "csi": 0.7209302325581395,
+      "confusion_matrix": [
+        [
+          322,
+          8
+        ],
+        [
+          4,
+          31
+        ]
+      ],
+      "confusion_matrix_labels": [
+        [
+          "TN",
+          "FP"
+        ],
+        [
+          "FN",
+          "TP"
+        ]
+      ]
+    }
+  },
+  "test_metrics": {
+    "xgboost": {
+      "precision": 0.8333333333333334,
+      "recall": 0.8490566037735849,
+      "f1": 0.8411214953271028,
+      "csi": 0.7258064516129032,
+      "confusion_matrix": [
+        [
+          669,
+          9
+        ],
+        [
+          8,
+          45
+        ]
+      ],
+      "confusion_matrix_labels": [
+        [
+          "TN",
+          "FP"
+        ],
+        [
+          "FN",
+          "TP"
+        ]
+      ]
+    }
+  },
+  "xgboost_scale_pos_weight": 12.047619047619047,
+  "limitations": [
+    "Uses realised daily weather, not archived issue-time forecasts.",
+    "No probability calibration or mortality outcomes.",
+    "Single location and short climate reference; not official IMD normals.",
+    "The test period has been inspected in earlier experiments; fresh external validation is still needed.",
+    "Historical temperature lags assume a completed prior day; deployment availability requires separate evaluation."
+  ]
+}

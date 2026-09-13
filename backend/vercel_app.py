@@ -310,7 +310,7 @@ def predict_batch(
         if current.date <= previous.date:
             raise HTTPException(status_code=422, detail="Dates must be increasing")
     results: list[PredictionOutput] = []
-    previous_prediction: bool | None = None
+    previous_prediction: bool | None = records[0].previous_day_heatwave
     previous_date: date | None = None
     for record in records:
         if previous_date is not None and record.date != previous_date + timedelta(days=1):

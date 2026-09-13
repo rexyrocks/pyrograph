@@ -15,7 +15,6 @@ import {
   Sparkles,
   Sun,
   TriangleAlert,
-  Users,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -30,7 +29,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { validateOutlook } from '@/lib/outlook-validation';
 import demographicsCsv from '../../data/processed/fixtures_synthetic_wards.csv?raw';
 
 type Risk = 'Moderate' | 'High' | 'Severe';
@@ -74,6 +73,19 @@ const fallbackOutlook: OutlookItem[] = [
   { day: 'Fri', date: '11 Sep', temperature: 41, probability: 54, risk: 'Moderate', note: 'Prototype fallback', normal: 39.3, p95: 42.1, p98: 44.6, persistenceMet: false },
   { day: 'Sat', date: '12 Sep', temperature: 40, probability: 38, risk: 'Moderate', note: 'Prototype fallback', normal: 39.1, p95: 42.0, p98: 44.5, persistenceMet: false },
 ];
+
+const sampleOutlook = fallbackOutlook.map((item, index) => ({
+  ...item, day: `Sample day ${index + 1}`, date: 'Illustrative', note: 'Synthetic sample',
+}));
+
+type Assessment = {
+  index: number;
+  band: ImpactBand;
+  heat_hazard_score: number;
+  vulnerability_score: number;
+  drivers: { factor: string; contribution: number; display_value: string }[];
+  municipal_actions: { priority: string; action: string }[];
+};
 
 const riskClass: Record<Risk, string> = {
   Moderate: 'risk-moderate',
@@ -122,38 +134,6 @@ const defaultVulnerability: VulnerabilityProfile = {
   deprivation: 52,
 };
 
-const vulnerabilityFactors = [
-  { key: 'olderAdults' as const, label: 'Older adults', weight: 0.25, referenceHigh: 25 },
-  { key: 'youngChildren' as const, label: 'Children under five', weight: 0.15, referenceHigh: 15 },
-  { key: 'outdoorWorkers' as const, label: 'Outdoor workers', weight: 0.20, referenceHigh: 50 },
-  { key: 'informalHousing' as const, label: 'Informal housing', weight: 0.25, referenceHigh: 40 },
-  { key: 'deprivation' as const, label: 'Social deprivation', weight: 0.15, referenceHigh: 100 },
-];
-
-function calculateImpact(
-  probability: number,
-  severe: boolean,
-  persistenceMet: boolean | null,
-  profile: VulnerabilityProfile,
-) {
-  const hazard = Math.min(100, probability * 0.82 + (severe ? 10 : 0) + (persistenceMet === true ? 8 : 0));
-  const contributions = vulnerabilityFactors.map((factor) => ({
-    label: factor.label,
-    value: profile[factor.key],
-    contribution: Math.min(profile[factor.key] / factor.referenceHigh, 1) * factor.weight * 100,
-  }));
-  const vulnerability = contributions.reduce((sum, factor) => sum + factor.contribution, 0);
-  const index = Math.min(100, hazard * 0.7 + vulnerability * 0.3);
-  const band: ImpactBand = index < 30 ? 'Low' : index < 50 ? 'Moderate' : index < 70 ? 'High' : 'Severe';
-  return {
-    index: Math.round(index * 10) / 10,
-    hazard: Math.round(hazard * 10) / 10,
-    vulnerability: Math.round(vulnerability * 10) / 10,
-    band,
-    drivers: contributions.sort((a, b) => b.contribution - a.contribution).slice(0, 3),
-  };
-}
-
 function ScenarioSlider({
   label,
   value,
@@ -182,23 +162,59 @@ export default function Home() {
   const [selectedDay, setSelectedDay] = useState(0);
   const [vulnerabilityProfile, setVulnerabilityProfile] = useState(defaultVulnerability);
   const [selectedDemoWard, setSelectedDemoWard] = useState('');
-  const [outlook, setOutlook] = useState<OutlookItem[]>(fallbackOutlook);
-  const [apiStatus, setApiStatus] = useState<'loading' | 'live' | 'fallback'>('loading');
+  const [outlook, setOutlook] = useState<OutlookItem[]>(sampleOutlook);
+  const [apiStatus, setApiStatus] = useState<'loading' | 'live' | 'unavailable'>('loading');
+  const [sampleMode, setSampleMode] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [assessment, setAssessment] = useState<{ key: string; result: Assessment } | null>(null);
+  const [assessmentError, setAssessmentError] = useState('');
   const [updatedAt, setUpdatedAt] = useState('Loading live outlook…');
-  const selected = outlook[selectedDay];
+  const displayedOutlook = sampleMode ? sampleOutlook : outlook;
+  const selected = displayedOutlook[selectedDay];
+  const hasOutlook = sampleMode || apiStatus === 'live';
   const demoWard = useMemo(
     () => demoWards.find((ward) => ward.wardId === selectedDemoWard) ?? null,
     [selectedDemoWard],
   );
-  const impact = useMemo(
-    () => calculateImpact(
-      selected.probability,
-      selected.risk === 'Severe',
-      selected.persistenceMet,
-      vulnerabilityProfile,
-    ),
-    [selected, vulnerabilityProfile],
-  );
+  const assessmentBody = JSON.stringify({
+    heatwave_probability: selected.probability / 100,
+    severe: selected.risk === 'Severe',
+    persistence_met: selected.persistenceMet,
+    vulnerability: {
+      older_adult_share: vulnerabilityProfile.olderAdults / 100,
+      young_child_share: vulnerabilityProfile.youngChildren / 100,
+      outdoor_worker_share: vulnerabilityProfile.outdoorWorkers / 100,
+      informal_housing_share: vulnerabilityProfile.informalHousing / 100,
+      social_deprivation_index: vulnerabilityProfile.deprivation / 100,
+    },
+  });
+  const impact = hasOutlook && assessment?.key === assessmentBody ? assessment.result : null;
+
+  useEffect(() => {
+    if (!hasOutlook) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch('/api/risk/assess', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: assessmentBody,
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+      }).then(async (response) => {
+        if (!response.ok) throw new Error('Assessment unavailable');
+        const result = await response.json() as Assessment & { mortality_probability: null };
+        if (result.mortality_probability !== null || !Number.isFinite(result.index) ||
+            !Array.isArray(result.drivers) || !Array.isArray(result.municipal_actions)) {
+          throw new Error('Invalid assessment');
+        }
+        if (!controller.signal.aborted) {
+          setAssessment({ key: assessmentBody, result });
+          setAssessmentError('');
+        }
+      }).catch(() => {
+        if (!controller.signal.aborted) setAssessmentError('Planning index unavailable. No local substitute score is shown.');
+      });
+    }, 150);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [assessmentBody, hasOutlook]);
 
   const updateVulnerability = (key: keyof VulnerabilityProfile, value: number) => {
     setVulnerabilityProfile((current) => ({ ...current, [key]: value }));
@@ -216,20 +232,22 @@ export default function Home() {
       youngChildren: ward.youngChildren,
       outdoorWorkers,
       informalHousing,
+      deprivation: defaultVulnerability.deprivation,
     }));
   };
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/outlook', { signal: controller.signal })
+    const refresh = () => fetch('/api/outlook', {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+    })
       .then((response) => {
         if (!response.ok) throw new Error('Live outlook unavailable');
         return response.json() as Promise<LiveOutlookResponse>;
       })
       .then((payload) => {
-        if (!Array.isArray(payload.outlook) || payload.outlook.length !== 5) {
-          throw new Error('Invalid outlook response');
-        }
+        validateOutlook(payload);
+        if (controller.signal.aborted) return;
         const liveOutlook: OutlookItem[] = payload.outlook.map((item, index) => {
           const isoDate = item.date;
           const parsedDate = new Date(`${isoDate}T00:00:00Z`);
@@ -239,9 +257,9 @@ export default function Home() {
             day: index === 0 ? 'Today' : parsedDate.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'UTC' }),
             date: parsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' }),
             temperature: item.tmax,
-            probability: Math.round(item.heatwave_probability * 100),
+            probability: item.heatwave_probability * 100,
             risk: severe ? 'Severe' : heatwave ? 'High' : 'Moderate',
-            note: item.lag_source === 'historical' ? 'Observed lag inputs' : 'Forecast-derived lags',
+            note: item.lag_source === 'historical' ? 'Historical analysis lags' : 'Forecast-derived lags',
             normal: item.climatology_normal,
             p95: item.climatology_p95,
             p98: item.climatology_p98,
@@ -259,13 +277,15 @@ export default function Home() {
           }),
         );
       })
-      .catch((error) => {
-        if (!(error instanceof DOMException && error.name === 'AbortError')) {
-          setApiStatus('fallback');
-          setUpdatedAt('Live service unavailable');
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setApiStatus('unavailable');
+          setUpdatedAt('Live forecast unavailable or stale');
         }
       });
-    return () => controller.abort();
+    void refresh();
+    const timer = setInterval(refresh, 60_000);
+    return () => { clearInterval(timer); controller.abort(); };
   }, []);
 
   return (
@@ -284,28 +304,36 @@ export default function Home() {
 
         <div className="header-actions">
           <Badge className="prototype-badge" aria-live="polite">
-            {apiStatus === 'live' ? 'Live model data' : apiStatus === 'loading' ? 'Loading model…' : 'Prototype fallback'}
+            {sampleMode ? 'Synthetic sample' : apiStatus === 'live' ? 'Live forecast' : apiStatus === 'loading' ? 'Loading forecast…' : 'Forecast unavailable'}
           </Badge>
-          <Button variant="ghost" size="icon" className="mobile-menu" aria-label="Open navigation">
+          <Button variant="ghost" size="icon" className="mobile-menu" aria-label="Open navigation" aria-expanded={mobileMenuOpen} aria-controls="mobile-navigation" onClick={() => setMobileMenuOpen((open) => !open)}>
             <Menu />
           </Button>
         </div>
       </header>
+      {mobileMenuOpen && <nav id="mobile-navigation" className="mobile-navigation" aria-label="Mobile navigation">
+        {['overview', 'impact', 'guidance'].map((section) => <a key={section} href={`#${section}`} onClick={() => setMobileMenuOpen(false)}>{section === 'impact' ? 'Planning index' : section}</a>)}
+      </nav>}
+      <div className="data-mode-banner" aria-live="polite">
+        <b>{sampleMode ? 'SYNTHETIC SAMPLE — invented temperatures, not current weather.' : apiStatus === 'live' ? 'LIVE FORECAST — preliminary model; not an official warning.' : apiStatus === 'loading' ? 'LOADING — no current heat assessment available.' : 'UNAVAILABLE — live data is missing, invalid or stale. No current heat assessment is shown.'}</b>
+        <Button variant="outline" onClick={() => { setSampleMode((current) => !current); setSelectedDay(0); }}>{sampleMode ? 'Return to live forecast' : 'Explore synthetic sample'}</Button>
+      </div>
 
+      {hasOutlook ? <>
       <section id="top" className="hero-shell">
         <div className="eyebrow-row">
           <span className="eyebrow"><MapPin size={14} /> Jaipur, Rajasthan</span>
-          <span className="update-time"><Clock3 size={14} /> Updated {updatedAt}</span>
+          <span className="update-time"><Clock3 size={14} /> {sampleMode ? 'Illustrative scenario · no observation date' : `Updated ${updatedAt}`}</span>
         </div>
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <Badge className="warning-badge"><TriangleAlert size={14} /> {selected.risk} risk outlook</Badge>
-            <h1>Heat risk is {selected.risk.toLowerCase()}<br />across Jaipur.</h1>
+            <Badge className="warning-badge"><TriangleAlert size={14} /> {sampleMode ? 'Sample' : 'Preliminary'} {selected.risk.toLowerCase()} hazard</Badge>
+            <h1>{sampleMode ? 'Explore a sample' : 'Jaipur forecast'}<br />heat scenario.</h1>
             <p>
               {selected.risk === 'Moderate'
-                ? 'Forecast temperatures remain below Jaipur’s heatwave threshold. Keep hydrated and continue monitoring updates.'
-                : 'Dangerous afternoon conditions are likely, with the highest exposure in dense central wards. Reduce outdoor activity between 12–4 PM.'}
+                ? 'The classifier does not flag this day as a heatwave. This is a preliminary model result, not a guarantee of safe conditions.'
+                : 'The preliminary classifier flags elevated heat hazard. Check official local advisories before making operational decisions.'}
             </p>
             <div className="hero-actions">
               <Button
@@ -316,11 +344,11 @@ export default function Home() {
               </Button>
               <Sheet>
                 <SheetTrigger render={<Button variant="outline" className="reason-button" />}>
-                  <Info /> Why this alert?
+                  <Info /> Explain this scenario
                 </SheetTrigger>
                 <SheetContent className="reason-sheet">
                   <SheetHeader>
-                    <Badge className="sheet-badge">Transparent alert logic</Badge>
+                    <Badge className="sheet-badge">Preliminary hazard logic</Badge>
                     <SheetTitle>Why Jaipur is at {selected.risk.toLowerCase()} risk</SheetTitle>
                     <SheetDescription>
                       The warning combines the model probability with Jaipur&apos;s calendar-day climate thresholds.
@@ -331,14 +359,16 @@ export default function Home() {
                     <div className="threshold-flow"><span /> compared with <span /></div>
                     <div className="threshold-card"><span>LOYO P95 threshold</span><b>{selected.p95.toFixed(1)}°C</b></div>
                     <ul className="reason-list">
-                      <li><span>Model probability</span><b>{selected.probability}%</b></li>
+                      <li><span>Uncalibrated model estimate</span><b>{selected.probability.toFixed(1)}%</b></li>
                       <li><span>Departure from normal</span><b>{selected.temperature - selected.normal >= 0 ? '+' : ''}{(selected.temperature - selected.normal).toFixed(1)}°C</b></li>
                       <li><span>Persistence check</span><b>{selected.persistenceMet === true ? 'Met · day 2 of 2' : selected.persistenceMet === false ? 'Not met' : 'Pending prior day'}</b></li>
                       <li><span>P98 severe threshold</span><b>{selected.p98.toFixed(1)}°C</b></li>
                     </ul>
                     <p className="explain-note">
-                      LOYO means the year being labelled is excluded when its climate threshold is calculated,
-                      preventing the day from influencing its own label.
+                      The serving model comes from a preliminary retrospective experiment.
+                      Its original LOYO evaluation allowed future years into training climatology.
+                      Percentile thresholds and this daily hazard label are not an official IMD declaration.
+                      Persistence must be assessed separately; unknown is not confirmed.
                     </p>
                   </div>
                 </SheetContent>
@@ -351,13 +381,13 @@ export default function Home() {
             <div className="temperature">{selected.temperature.toFixed(1)}<sup>°C</sup></div>
             <div className="risk-line">
               <span className={`risk-pill ${riskClass[selected.risk]}`}>{selected.risk} risk</span>
-              <span>{selected.probability}% heatwave probability</span>
+              <span>{selected.probability.toFixed(1)}% uncalibrated model estimate</span>
             </div>
             <div className="confidence-track"><span style={{ width: `${selected.probability}%` }} /></div>
             <div className="mini-stats">
               <span><small>Normal</small><b>{selected.normal.toFixed(1)}°C</b></span>
               <span><small>Departure</small><b>{selected.temperature - selected.normal >= 0 ? '+' : ''}{(selected.temperature - selected.normal).toFixed(1)}°C</b></span>
-              <span><small>Peak window</small><b>2–5 PM</b></span>
+              <span><small>Persistence</small><b>{selected.persistenceMet === true ? 'Met' : selected.persistenceMet === false ? 'Not met' : 'Unknown'}</b></span>
             </div>
           </div>
         </div>
@@ -369,23 +399,17 @@ export default function Home() {
             <div>
               <span className="kicker">Plan ahead</span>
               <h2>Five-day heat outlook</h2>
-              <p className="weather-source">Temperature source: Open-Meteo Forecast API · Jaipur 26.91°N, 75.79°E</p>
+              <p className="weather-source">{sampleMode ? 'Synthetic temperatures for illustration only' : 'Temperature source: Open-Meteo Forecast API · Jaipur 26.91°N, 75.79°E'}</p>
             </div>
             <div className="view-switcher">
-              <span>View for</span>
-              <Tabs defaultValue="public">
-                <TabsList>
-                  <TabsTrigger value="public">Public</TabsTrigger>
-                  <TabsTrigger value="operations">Operations</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              <span>Municipal operations are demonstrated through the local API.</span>
             </div>
           </div>
           <div className="forecast-scroll">
             <div className="forecast-grid">
-              {outlook.map((item, index) => (
+              {displayedOutlook.map((item, index) => (
                 <button
-                  key={item.date}
+                  key={item.day}
                   className={`forecast-card ${selectedDay === index ? 'selected' : ''}`}
                   onClick={() => setSelectedDay(index)}
                   aria-pressed={selectedDay === index}
@@ -393,7 +417,7 @@ export default function Home() {
                   <span className="forecast-day"><b>{item.day}</b><small>{item.date}</small></span>
                   <strong className="forecast-temp">{item.temperature.toFixed(1)}°</strong>
                   <span className={`forecast-risk ${riskClass[item.risk]}`}>{item.risk}</span>
-                  <span className="forecast-prob"><i style={{ width: `${item.probability}%` }} />{item.probability}% probability</span>
+                  <span className="forecast-prob"><i style={{ width: `${item.probability}%` }} />{item.probability.toFixed(1)}% model estimate</span>
                   <small className="forecast-note">{item.note}</small>
                 </button>
               ))}
@@ -417,24 +441,26 @@ export default function Home() {
           </div>
 
           <div className="impact-grid">
-            <article className="impact-score-card">
+            <article className="impact-score-card" aria-live="polite">
+              {impact ? <>
               <div className="impact-score-top">
                 <span>Planning index</span>
-                <Badge variant="outline">{outlook[selectedDay].day} · {outlook[selectedDay].date}</Badge>
+                <Badge variant="outline">{selected.day} · {selected.date}</Badge>
               </div>
               <div className="impact-number">{impact.index}<small>/100</small></div>
               <span className={`impact-band impact-${impact.band.toLowerCase()}`}>{impact.band} planning priority</span>
               <div className="component-scores">
                 <div>
-                  <span><b>Heat hazard</b><strong>{impact.hazard}</strong></span>
-                  <i><em style={{ width: `${impact.hazard}%` }} /></i>
+                  <span><b>Heat hazard</b><strong>{impact.heat_hazard_score}</strong></span>
+                  <i><em style={{ width: `${impact.heat_hazard_score}%` }} /></i>
                 </div>
                 <div>
-                  <span><b>Vulnerability</b><strong>{impact.vulnerability}</strong></span>
-                  <i><em style={{ width: `${impact.vulnerability}%` }} /></i>
+                  <span><b>Vulnerability</b><strong>{impact.vulnerability_score}</strong></span>
+                  <i><em style={{ width: `${impact.vulnerability_score}%` }} /></i>
                 </div>
               </div>
               <p className="formula-note">70% heat hazard + 30% demographic vulnerability. Severe and two-day persistence checks modify the hazard component.</p>
+              </> : <p>{assessmentError || 'Calculating the planning index…'}</p>}
             </article>
 
             <article className="scenario-card">
@@ -442,7 +468,7 @@ export default function Home() {
                 <div><span className="kicker">Scenario controls</span><h3>Test aggregate vulnerability</h3></div>
                 <Button variant="ghost" size="sm" onClick={() => { setSelectedDemoWard(''); setVulnerabilityProfile(defaultVulnerability); }}>Reset</Button>
               </div>
-              <p>Load a Gemini-prepared synthetic fixture or adjust the values. These are not official Jaipur demographic estimates.</p>
+              <p>Load a synthetic fixture or adjust the values. These are not official Jaipur demographic estimates. Social deprivation resets to a manual sample value of 52 when a fixture is loaded.</p>
               <div className="demo-ward-picker">
                 <NativeSelect
                   aria-label="Load a synthetic ward fixture"
@@ -474,15 +500,15 @@ export default function Home() {
             </article>
           </div>
 
-          <div className="impact-detail-grid">
+          {impact && <div className="impact-detail-grid">
             <article>
               <span className="kicker">What drives the score</span>
               <h3>Top vulnerability contributors</h3>
               <ol className="driver-list">
                 {impact.drivers.map((driver) => (
-                  <li key={driver.label}>
-                    <span>{driver.label}<small>Scenario value {driver.value}%</small></span>
-                    <b>+{driver.contribution.toFixed(1)}</b>
+                  <li key={driver.factor}>
+                    <span>{driver.factor}<small>Scenario value {driver.display_value}</small></span>
+                    <b>+{driver.contribution.toFixed(1)} vulnerability pts</b>
                   </li>
                 ))}
               </ol>
@@ -491,21 +517,18 @@ export default function Home() {
               <span className="kicker">Municipal trigger</span>
               <h3>Actions for {impact.band.toLowerCase()} priority</h3>
               <ul className="trigger-list">
-                <li><ShieldCheck /> Monitor the forecast and verify response contacts.</li>
-                {impact.index >= 30 && <li><Droplets /> Confirm water points, cooling spaces, and outreach teams.</li>}
-                {impact.index >= 50 && <li><Clock3 /> Shift outdoor municipal work away from afternoon peak heat.</li>}
-                {impact.index >= 50 && <li><Users /> Issue guidance for vulnerable population groups.</li>}
-                {impact.index >= 70 && <li><Building2 /> Activate health-facility readiness and incident review.</li>}
+                {impact.municipal_actions.map((action) => <li key={action.action}><ShieldCheck />{action.action}</li>)}
               </ul>
             </article>
-          </div>
+          </div>}
         </section>
       </div>
+      </> : <section className="page-wrap unavailable-panel" id="overview"><h1>{apiStatus === 'loading' ? 'Loading forecast' : 'Forecast unavailable'}</h1><p>Current temperatures and planning scores are hidden until a fresh forecast is available. You can explicitly explore a synthetic sample above.</p></section>}
 
       <section id="guidance" className="guidance-section">
         <div className="page-wrap">
           <div className="section-heading light">
-            <div><span className="kicker">Act before the peak</span><h2>What to do today</h2></div>
+            <div><span className="kicker">General preparedness</span><h2>Heat safety guidance</h2></div>
             <p>Simple actions that reduce exposure and protect people at highest risk.</p>
           </div>
           <div className="action-grid">
@@ -525,7 +548,7 @@ export default function Home() {
       <section className="trust-strip">
         <div className="page-wrap trust-grid">
           <div><ShieldCheck /><span><b>Classical ML, explained</b><small>Random Forest and XGBoost comparison</small></span></div>
-          <div><Activity /><span><b>Climate-aware thresholds</b><small>Leakage-safe LOYO labelling</small></span></div>
+          <div><Activity /><span><b>Preliminary retrospective model</b><small>Advance forecast skill is not validated</small></span></div>
           <div><Sparkles /><span><b>Action-led alerts</b><small>Risk translated into clear steps</small></span></div>
         </div>
       </section>

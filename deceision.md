@@ -136,3 +136,20 @@ is deliberately enabled.
 numbers, pretending accepted messages were delivered, enabling public
 operations routes by default, and silently accepting a real-provider setting
 without an implemented adapter were rejected for safety and reliability.
+
+## D-011 — Separate sample mode, shared scoring and corrected evaluation
+
+**Decision (14 September 2026):** Require explicit synthetic-sample selection;
+hide live assessment on unavailable/stale data; use the shared risk API for all
+displayed scores and recommendations; preserve full input precision. Correct
+batch persistence parity and include demographic fixtures in the image recipe.
+
+**Evidence:** The audit reproduced fabricated-current-weather fallback,
+frontend/API band disagreement, dropped first-day persistence, and missing
+container data. Regression tests and browser checks now cover these behaviors.
+
+**Evaluation:** Use a 2015–2018 fixed climate reference, 2019–2021 fitting,
+2022 selection and 2023–2024 testing. Preserve legacy serving artifacts and
+mark both evaluations as preliminary retrospective work. Do not claim forecast
+skill or mortality calibration. See `docs/demo-readiness.md` for results and
+the still-required built-image smoke check on a Docker-enabled host.

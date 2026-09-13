@@ -1,8 +1,8 @@
-"""Train and compare classical ML models for Jaipur heatwave detection.
+"""Run a preliminary retrospective evaluation for Jaipur heatwave detection.
 
-The heatwave and severe labels are based on leave-one-year-out (LOYO)
-climatology. This module deliberately keeps the IMD persistence rule outside
-the training label; persistence belongs in the downstream alert layer.
+The CLI uses a fixed 2015-2018 climate reference and separate fitting,
+selection and test periods. Legacy LOYO helpers are retained for inspecting
+the original serving experiment, whose metrics are not leakage-safe.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True, help="Input daily CSV")
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("outputs"), help="Artifact directory"
+        "--output-dir", type=Path, default=Path("work/retrospective-v2"), help="Evaluation report directory (serving artifacts are not replaced)"
     )
     return parser.parse_args()
 
@@ -288,25 +288,12 @@ def save_artifacts(
 
 
 def main() -> None:
-    args = parse_args()
-    raw = validate_and_load(args.data)
-    labeled = add_loyo_climatology(raw)
-    featured = engineer_features(labeled)
-    train, test = split_data(featured)
-    models, scale_pos_weight = train_models(train)
-    metrics, importances = evaluate_models(models, test)
-    selected = save_artifacts(
-        args.output_dir,
-        models,
-        metrics,
-        importances,
-        scale_pos_weight,
-        featured,
-        train,
-        test,
-    )
+    from evaluate_retrospective import run_evaluation
 
-    print(json.dumps({"selected_model": selected, "metrics": metrics}, indent=2))
+    args = parse_args()
+    if args.output_dir.resolve() == (Path(__file__).resolve().parent / 'outputs'):
+        raise ValueError('Use a separate report directory; outputs contains legacy serving artifacts')
+    print(json.dumps(run_evaluation(args.data, args.output_dir), indent=2))
 
 
 if __name__ == "__main__":
