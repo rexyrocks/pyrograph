@@ -119,3 +119,20 @@ and avoiding overlapping edits.
 **Alternatives not chosen:** Splitting only by frontend and backend would mix
 research, safety, and integration responsibilities. Allowing everyone to edit
 shared entrypoints would create merge conflicts and unclear accountability.
+
+## D-010 — Keep alert delivery and municipal state offline and fail closed
+
+**Decision:** Integrate a shared SMS/WhatsApp provider contract with a
+deterministic offline implementation, process-local idempotency and audit
+records, role-based municipal workflows, and an explicit Vercel demo-route
+feature flag. Reject any non-demo provider configuration.
+
+**Why:** This proves delivery and response orchestration without credentials,
+personal contact data, network calls, or unsupported claims of real delivery.
+The feature flag prevents browser access to operations routes unless the demo
+is deliberately enabled.
+
+**Alternatives not chosen:** Unofficial WhatsApp automation, hard-coded phone
+numbers, pretending accepted messages were delivered, enabling public
+operations routes by default, and silently accepting a real-provider setting
+without an implemented adapter were rejected for safety and reliability.

@@ -57,6 +57,13 @@ The service provides:
   heat hazard and aggregate demographic vulnerability
 - `GET /demographics/wards` — validated synthetic ward fixtures with explicit
   missing fields and non-operational provenance
+- `POST /alerts/dispatch` and `GET /alerts/{alert_id}` — offline SMS/WhatsApp
+  simulation with idempotency, deduplication, retries, and delivery receipts
+- `/municipal/workflows` — role ownership, acknowledgement, escalation checks,
+  state transitions, and an append-only audit trail
+
+The alerts and municipal workflow are explicitly in-memory demo services. See
+`docs/operations-demo.md` for their contracts and production limitations.
 
 Clients send the eight raw weather values and six lag values. The backend
 calculates the LOYO climatological normal, P95/P98 thresholds,

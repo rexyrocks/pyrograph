@@ -18,7 +18,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.alerts import (
+    AlertConflictError,
+    AlertDispatchInput,
+    AlertDispatchOutput,
+    AlertNotFoundError,
+    AlertRecord,
+    build_alert_service_from_environment,
+)
 from backend.demographics import WardDemographicsCollection, load_ward_demographics
+from backend.municipal import (
+    EscalationCheckOutput,
+    InvalidTransitionError,
+    MunicipalWorkflow,
+    MunicipalWorkflowService,
+    WorkflowConflictError,
+    WorkflowCreateInput,
+    WorkflowCreateOutput,
+    WorkflowNotFoundError,
+    WorkflowTransitionInput,
+)
 from backend.risk import RiskAssessmentInput, RiskAssessmentOutput, assess_risk
 
 
@@ -134,6 +153,8 @@ def _load_runtime(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _load_runtime(app)
+    app.state.alert_service = build_alert_service_from_environment()
+    app.state.municipal_service = MunicipalWorkflowService()
     yield
 
 
@@ -320,3 +341,87 @@ def ward_demographics() -> WardDemographicsCollection:
     """Return validated synthetic records for integration testing."""
 
     return load_ward_demographics()
+
+
+@app.post(
+    "/alerts/dispatch",
+    response_model=AlertDispatchOutput,
+    dependencies=[Depends(require_api_key)],
+)
+def dispatch_alert(request: Request, payload: AlertDispatchInput) -> AlertDispatchOutput:
+    """Dispatch through the offline provider; no real message is sent."""
+
+    try:
+        return request.app.state.alert_service.dispatch(payload)
+    except AlertConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get(
+    "/alerts/{alert_id}",
+    response_model=AlertRecord,
+    dependencies=[Depends(require_api_key)],
+)
+def get_alert(request: Request, alert_id: str) -> AlertRecord:
+    try:
+        return request.app.state.alert_service.get(alert_id)
+    except AlertNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Alert not found") from error
+
+
+@app.post(
+    "/municipal/workflows",
+    response_model=WorkflowCreateOutput,
+    dependencies=[Depends(require_api_key)],
+)
+def create_municipal_workflow(
+    request: Request, payload: WorkflowCreateInput
+) -> WorkflowCreateOutput:
+    try:
+        return request.app.state.municipal_service.create(payload)
+    except WorkflowConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get(
+    "/municipal/workflows/{workflow_id}",
+    response_model=MunicipalWorkflow,
+    dependencies=[Depends(require_api_key)],
+)
+def get_municipal_workflow(request: Request, workflow_id: str) -> MunicipalWorkflow:
+    try:
+        return request.app.state.municipal_service.get(workflow_id)
+    except WorkflowNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Workflow not found") from error
+
+
+@app.post(
+    "/municipal/workflows/{workflow_id}/transitions",
+    response_model=MunicipalWorkflow,
+    dependencies=[Depends(require_api_key)],
+)
+def transition_municipal_workflow(
+    request: Request,
+    workflow_id: str,
+    payload: WorkflowTransitionInput,
+) -> MunicipalWorkflow:
+    try:
+        return request.app.state.municipal_service.transition(workflow_id, payload)
+    except WorkflowNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Workflow not found") from error
+    except InvalidTransitionError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get(
+    "/municipal/workflows/{workflow_id}/escalation",
+    response_model=EscalationCheckOutput,
+    dependencies=[Depends(require_api_key)],
+)
+def check_municipal_escalation(
+    request: Request, workflow_id: str
+) -> EscalationCheckOutput:
+    try:
+        return request.app.state.municipal_service.check_escalation(workflow_id)
+    except WorkflowNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Workflow not found") from error

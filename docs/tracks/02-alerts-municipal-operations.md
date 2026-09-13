@@ -9,6 +9,24 @@ Human teammate A
 Demonstrate a reliable alert and municipal-response workflow without requiring
 paid SMS/WhatsApp credentials during the hackathon.
 
+## Integration status
+
+Implemented and integrated by Codex on `sol/integeration`:
+
+- `backend/alerts.py`: `DeliveryProvider`, `DemoDeliveryProvider`,
+  `AlertService`, and validated request/receipt models
+- `backend/municipal.py`: `MunicipalWorkflowService`, state transition models,
+  escalation checks, ownership rules, and immutable audit events
+- Shared endpoints in both `backend/main.py` and `backend/vercel_app.py`
+- Focused and API integration tests under `tests/`
+
+No additional environment variable is required for offline use.
+`HEATSHIELD_ALERT_PROVIDER` defaults to `demo` and rejects all other values.
+The browser proxy additionally requires
+`HEATSHIELD_OPERATIONS_DEMO_ENABLED=true` to expose demo operations routes.
+
+See `docs/operations-demo.md` for example requests, responses, and limitations.
+
 ## Tasks
 
 1. Build an offline demo delivery provider for SMS and WhatsApp channels.
@@ -61,3 +79,8 @@ Provide:
 - Focused test results
 - Decisions and rejected alternatives
 - Known limitations
+
+Handoff is complete. The provider interface was chosen over a paid SDK or
+unofficial WhatsApp automation. Retry attempts are synchronous and bounded but
+contain no sleeps. Storage remains process-local and must be replaced before
+multi-worker or real-message operation.
