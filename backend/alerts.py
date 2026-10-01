@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 import os
+from pathlib import Path
+import sqlite3
 from threading import RLock
 from typing import Callable, Literal, Protocol
 
@@ -62,7 +65,7 @@ class AlertRecord(StrictModel):
     receipts: list[DeliveryReceipt]
     created_at: datetime
     updated_at: datetime
-    storage_kind: Literal["in_memory_demo"] = "in_memory_demo"
+    storage_kind: Literal["in_memory_demo", "sqlite_local_demo"] = "in_memory_demo"
     real_delivery_enabled: Literal[False] = False
 
 
@@ -268,6 +271,58 @@ class AlertService:
                 raise AlertNotFoundError(alert_id) from error
 
 
+class SqliteAlertService(AlertService):
+    """Transactional local persistence for the offline provider only."""
+
+    def __init__(self, path: Path, provider: DemoDeliveryProvider | None = None,
+                 clock: Callable[[], datetime] | None = None) -> None:
+        if not path.parent.is_dir():
+            raise FileNotFoundError(f"Alert database directory does not exist: {path.parent}")
+        if provider is not None and not isinstance(provider, DemoDeliveryProvider):
+            raise ValueError("SQLite alert storage is restricted to the offline demo provider")
+        super().__init__(provider=provider or DemoDeliveryProvider(), clock=clock)
+        self.path = path
+        with closing(self._connect()) as db, db:
+            db.execute("""CREATE TABLE IF NOT EXISTS alerts (
+                alert_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE,
+                document TEXT NOT NULL)""")
+
+    def _connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.path, timeout=10)
+        db.execute("PRAGMA busy_timeout=10000")
+        return db
+
+    def _hydrate(self, db: sqlite3.Connection) -> None:
+        self._alerts_by_id.clear()
+        self._idempotency_fingerprints.clear()
+        self._idempotency_alert_ids.clear()
+        self._deduplication_alert_ids.clear()
+        for (document,) in db.execute("SELECT document FROM alerts").fetchall():
+            record = AlertRecord.model_validate_json(document)
+            self._store(record, self._fingerprint(record.request))
+            if record.status in {"sent", "delivered"}:
+                self._deduplication_alert_ids[self._deduplication_scope(record.request)] = record.alert_id
+
+    def dispatch(self, request: AlertDispatchInput) -> AlertDispatchOutput:
+        with self._lock, closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            self._hydrate(db)
+            result = self._dispatch_locked(request)
+            if result.idempotent_replay:
+                return result
+            stored = result.alert.model_copy(update={"storage_kind": "sqlite_local_demo"})
+            db.execute("INSERT INTO alerts VALUES (?, ?, ?)",
+                       (stored.alert_id, request.idempotency_key, stored.model_dump_json()))
+            return AlertDispatchOutput(alert=stored)
+
+    def get(self, alert_id: str) -> AlertRecord:
+        with closing(self._connect()) as db, db:
+            row = db.execute("SELECT document FROM alerts WHERE alert_id=?", (alert_id,)).fetchone()
+        if row is None:
+            raise AlertNotFoundError(alert_id)
+        return AlertRecord.model_validate_json(row[0])
+
+
 def build_alert_service_from_environment() -> AlertService:
     """Fail closed if an unimplemented real delivery provider is requested."""
 
@@ -277,4 +332,5 @@ def build_alert_service_from_environment() -> AlertService:
             "Only HEATSHIELD_ALERT_PROVIDER=demo is available; real providers "
             "must implement DeliveryProvider before use"
         )
-    return AlertService(provider=DemoDeliveryProvider())
+    path = os.getenv("HEATSHIELD_ALERT_DB")
+    return SqliteAlertService(Path(path)) if path else AlertService(provider=DemoDeliveryProvider())

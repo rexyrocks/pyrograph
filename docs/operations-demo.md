@@ -37,7 +37,12 @@ channel and audience is suppressed before provider dispatch. SMS and WhatsApp
 can therefore both receive the same event. Failed alerts can be retried with a
 new idempotency key.
 
-`GET /alerts/{alert_id}` returns the current in-memory demo record.
+`GET /alerts/{alert_id}` returns the current demo record. Set
+`HEATSHIELD_ALERT_DB` to a local SQLite file to persist alert receipts,
+idempotency and duplicate suppression across restarts. The file's parent
+directory must already exist. This mode remains restricted to the offline
+provider and still sends no messages. It may share a SQLite file with the
+municipal workflow store because each service uses a separate table.
 
 ## Municipal flow
 
@@ -77,14 +82,14 @@ All operations endpoints in `backend/vercel_app.py` require `X-API-Key`. The
 browser-facing Vercel proxy exposes them only when
 `HEATSHIELD_OPERATIONS_DEMO_ENABLED=true`; they otherwise return 404.
 
-Without the database setting, records are labelled `in_memory_demo` and lost
-on restart. With it, workflows are labelled `sqlite_local` and mutations are
-transactional across local processes, but a container without a persistent
-mounted volume will still lose the database on replacement. Alert delivery
-records remain in-memory in both modes. Operator authentication,
-authorization, recipient consent, quiet-hour rules, a deployed escalation
-scheduler, durable alert storage and a secrets-backed provider adapter are
-required before real delivery.
+Without database settings, records are labelled `in_memory_demo` and lost on
+restart. With them, workflow records are labelled `sqlite_local` and alert
+records `sqlite_local_demo`; mutations are transactional across local
+processes. A container without a persistent mounted volume still loses the
+database on replacement. Operator authentication, authorization, recipient
+consent, quiet-hour rules, a deployed escalation scheduler, production-grade
+managed storage, delivery callbacks and a secrets-backed provider adapter
+remain required before real delivery.
 
 ## Verification
 

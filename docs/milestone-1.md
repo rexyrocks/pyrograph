@@ -49,6 +49,6 @@ Deploy backend and frontend as a coordinated release: a new frontend intentional
 | 3 — thermal integration | API/UI integration complete | Independent scientific validation and improved exposure inputs |
 | 4 — GIS | Not implemented | Verified geometry and local data joins |
 | 5 — health model | Data-dependent | Outcome data, justified model and held-out validation |
-| 6 — response | Offline simulation plus opt-in transactional SQLite municipal workflow and one-shot escalation job | Durable alert storage, operator identity, real provider/consent integration, mounted database and deployed scheduler |
+| 6 — response | Offline simulation, opt-in local SQLite alert/workflow persistence and one-shot escalation job | Production storage, operator identity, real provider/consent integration, mounted database and deployed scheduler |
 | 7 — UI | First milestone browser-verified | GIS and operator journeys plus localisation |
 | 8 — release | Not started | Container, deployment, reliability and submission evidence |

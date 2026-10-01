@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from pydantic import ValidationError
@@ -12,6 +15,7 @@ from backend.alerts import (
     AlertService,
     DemoDeliveryProvider,
     ProviderResult,
+    SqliteAlertService,
     build_alert_service_from_environment,
 )
 
@@ -168,6 +172,39 @@ class AlertServiceTests(unittest.TestCase):
     def test_recipient_scope_rejects_direct_contact_values(self) -> None:
         with self.assertRaises(ValidationError):
             alert_payload(recipient_scope="+919999999999")
+
+    def test_sqlite_alert_receipts_and_deduplication_survive_restart(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "alerts.sqlite"
+            first = SqliteAlertService(path, clock=SteppingClock())
+            original = first.dispatch(alert_payload()).alert
+            self.assertEqual(original.storage_kind, "sqlite_local_demo")
+            second = SqliteAlertService(path, clock=SteppingClock())
+            self.assertEqual(second.get(original.alert_id).receipts, original.receipts)
+            self.assertTrue(second.dispatch(alert_payload()).idempotent_replay)
+            with self.assertRaises(AlertConflictError):
+                second.dispatch(alert_payload(message="Changed text"))
+            duplicate = second.dispatch(alert_payload(
+                idempotency_key="alert:jaipur:duplicate:after-restart"))
+            self.assertEqual(duplicate.alert.status, "suppressed")
+            self.assertEqual(duplicate.alert.attempts, 0)
+            self.assertEqual(first.get(duplicate.alert.alert_id).status, "suppressed")
+
+    def test_sqlite_storage_rejects_real_provider(self) -> None:
+        with TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "offline demo provider"):
+                SqliteAlertService(Path(directory) / "alerts.sqlite",
+                                   provider=AcceptedWithoutDeliveryProvider())
+
+    def test_sqlite_dispatch_serializes_same_key_across_instances(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "alerts.sqlite"
+            services = (SqliteAlertService(path), SqliteAlertService(path))
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda service: service.dispatch(alert_payload()), services))
+            self.assertCountEqual([result.idempotent_replay for result in results], [False, True])
+            self.assertEqual(results[0].alert.alert_id, results[1].alert.alert_id)
+            self.assertEqual(len(services[0].get(results[0].alert.alert_id).receipts), 3)
 
 
 if __name__ == "__main__":

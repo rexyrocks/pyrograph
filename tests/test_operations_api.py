@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import os
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -116,6 +119,28 @@ class OperationsApiTests(unittest.TestCase):
         self.assertEqual(missing_workflow.status_code, 401)
         self.assertEqual(valid_alert.status_code, 200)
         self.assertFalse(valid_alert.json()["alert"]["real_delivery_enabled"])
+
+    def test_sqlite_operations_are_restored_after_api_restart(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = str(Path(directory) / "operations.sqlite")
+            with patch.dict(os.environ, {"HEATSHIELD_ALERT_DB": path,
+                                      "HEATSHIELD_WORKFLOW_DB": path,
+                                      "HEATSHIELD_ALERT_PROVIDER": "demo"}):
+                headers = {"X-API-Key": TEST_API_KEY}
+                with TestClient(vercel_app) as first:
+                    alert = first.post("/alerts/dispatch", json=alert_payload().model_dump(mode="json"),
+                                       headers=headers).json()["alert"]
+                    workflow = first.post("/municipal/workflows",
+                                          json=workflow_payload().model_dump(mode="json"),
+                                          headers=headers).json()["workflow"]
+                with TestClient(vercel_app) as second:
+                    restored_alert = second.get(f"/alerts/{alert['alert_id']}", headers=headers)
+                    restored_workflow = second.get(
+                        f"/municipal/workflows/{workflow['workflow_id']}", headers=headers)
+                self.assertEqual(restored_alert.status_code, 200)
+                self.assertEqual(restored_alert.json()["storage_kind"], "sqlite_local_demo")
+                self.assertEqual(restored_workflow.status_code, 200)
+                self.assertEqual(restored_workflow.json()["storage_kind"], "sqlite_local")
 
 
 if __name__ == "__main__":

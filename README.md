@@ -89,7 +89,8 @@ By default, alerts and municipal workflows use in-memory demo services. See
 Municipal workflows can instead use an opt-in local SQLite file through
 `HEATSHIELD_WORKFLOW_DB`; an external scheduler can invoke
 `python3 -m scripts.escalate_due` with the same path. Alert receipts remain
-in-memory and no real messages are sent.
+in-memory by default, or persist in an offline-only local SQLite file via
+`HEATSHIELD_ALERT_DB`. No real messages are sent.
 
 Clients send the eight raw weather values and six lag values. The backend
 reads the fixed-reference climatological normal and P95/P98 thresholds,
