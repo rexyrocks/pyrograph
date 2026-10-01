@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import time
 from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 
 
 def main():
@@ -30,9 +30,16 @@ def main():
             try:
                 get('/health')
                 break
-            except (URLError, TimeoutError):
+            except (OSError, TimeoutError) as error:
                 if attempt == 59:
-                    raise
+                    logs = subprocess.run(
+                        ['docker', 'logs', container], capture_output=True, text=True,
+                        check=False,
+                    )
+                    detail = (logs.stdout + logs.stderr)[-5000:]
+                    raise RuntimeError(
+                        f'Container did not become healthy: {error}\n{detail}'
+                    ) from error
                 time.sleep(1)
         info = get('/model/info')
         assert info['model_version'] == 'jaipur-fixed-v2'
