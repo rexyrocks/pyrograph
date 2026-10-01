@@ -60,8 +60,15 @@ def aggregate_complete_days(payload: dict) -> tuple[dict[date, dict], dict]:
     daily, coverage = {}, {}
     for local_day, group in frame.groupby('date', sort=True):
         missing = [name for name in HOURLY_FIELDS if group[name].isna().any()]
-        complete = len(group) == 24 and not missing
-        coverage[local_day.isoformat()] = {'hours': len(group), 'complete': complete, 'missing': missing}
+        ranges = {'temperature_2m': (-90, 65), 'relative_humidity_2m': (0, 100),
+                  'wind_speed_10m': (0, float('inf')), 'surface_pressure': (0, float('inf')),
+                  'shortwave_radiation': (0, float('inf')), 'cloud_cover': (0, 100)}
+        invalid = [name for name, (low, high) in ranges.items()
+                   if name not in missing and (not group[name].between(low, high).all()
+                                               or (name == 'surface_pressure' and (group[name] == 0).any()))]
+        complete = len(group) == 24 and not missing and not invalid
+        coverage[local_day.isoformat()] = {'hours': len(group), 'complete': complete,
+                                          'missing': missing, 'invalid': invalid}
         if not complete:
             continue
         daily[local_day] = {

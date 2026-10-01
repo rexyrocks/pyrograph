@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+import os
+from pathlib import Path
+import sqlite3
 from threading import RLock
 from typing import Callable, Literal
 
@@ -61,7 +65,7 @@ class MunicipalWorkflow(StrictModel):
     audit_events: tuple[AuditEvent, ...]
     created_at: datetime
     updated_at: datetime
-    storage_kind: Literal["in_memory_demo"] = "in_memory_demo"
+    storage_kind: Literal["in_memory_demo", "sqlite_local"] = "in_memory_demo"
 
 
 class WorkflowCreateOutput(StrictModel):
@@ -109,6 +113,51 @@ _ALLOWED_TRANSITIONS: dict[WorkflowStatus, frozenset[WorkflowStatus]] = {
 }
 
 
+def _new_workflow(request: WorkflowCreateInput, now: datetime, storage_kind: str) -> MunicipalWorkflow:
+    workflow_id = "workflow_" + sha256(request.idempotency_key.encode()).hexdigest()[:16]
+    return MunicipalWorkflow(
+        workflow_id=workflow_id,
+        request=request,
+        owner_role=_OWNER_BY_BAND[request.priority_band],
+        status="pending",
+        escalation_due_at=now + timedelta(minutes=_ESCALATION_MINUTES[request.priority_band]),
+        audit_events=(AuditEvent(sequence=1, occurred_at=now, event_type="created",
+                                 from_status=None, to_status="pending", actor_role="system",
+                                 reason="Workflow created from a heat-health priority band."),),
+        created_at=now,
+        updated_at=now,
+        storage_kind=storage_kind,
+    )
+
+
+def _transition_workflow(workflow: MunicipalWorkflow, request: WorkflowTransitionInput,
+                         now: datetime) -> MunicipalWorkflow:
+    if request.to_status not in _ALLOWED_TRANSITIONS[workflow.status]:
+        raise InvalidTransitionError(f"Transition {workflow.status} -> {request.to_status} is not allowed")
+    event = AuditEvent(sequence=len(workflow.audit_events) + 1, occurred_at=now,
+                       event_type="transitioned", from_status=workflow.status,
+                       to_status=request.to_status, actor_role=request.actor_role, reason=request.reason)
+    return workflow.model_copy(update={"status": request.to_status,
+                                       "audit_events": (*workflow.audit_events, event),
+                                       "updated_at": now})
+
+
+def _escalation_check(workflow: MunicipalWorkflow, now: datetime) -> EscalationCheckOutput:
+    terminal = workflow.status in {"resolved", "failed"}
+    eligible = not terminal and workflow.status != "escalated" and now >= workflow.escalation_due_at
+    if terminal:
+        reason = "Terminal workflows are not eligible for escalation."
+    elif workflow.status == "escalated":
+        reason = "Workflow is already escalated."
+    elif eligible:
+        reason = "Acknowledgement or resolution deadline has passed."
+    else:
+        reason = "Escalation deadline has not passed."
+    return EscalationCheckOutput(workflow_id=workflow.workflow_id, status=workflow.status,
+                                 eligible=eligible, escalation_due_at=workflow.escalation_due_at,
+                                 checked_at=now, reason=reason)
+
+
 class MunicipalWorkflowService:
     """Deterministic, in-memory workflow service for offline demonstrations."""
 
@@ -141,34 +190,10 @@ class MunicipalWorkflowService:
                 idempotent_replay=True,
             )
 
-        now = self.clock()
-        workflow_id = "workflow_" + sha256(
-            request.idempotency_key.encode()
-        ).hexdigest()[:16]
-        workflow = MunicipalWorkflow(
-            workflow_id=workflow_id,
-            request=request,
-            owner_role=_OWNER_BY_BAND[request.priority_band],
-            status="pending",
-            escalation_due_at=now
-            + timedelta(minutes=_ESCALATION_MINUTES[request.priority_band]),
-            audit_events=(
-                AuditEvent(
-                    sequence=1,
-                    occurred_at=now,
-                    event_type="created",
-                    from_status=None,
-                    to_status="pending",
-                    actor_role="system",
-                    reason="Workflow created from a heat-health priority band.",
-                ),
-            ),
-            created_at=now,
-            updated_at=now,
-        )
-        self._workflows[workflow_id] = workflow
+        workflow = _new_workflow(request, self.clock(), "in_memory_demo")
+        self._workflows[workflow.workflow_id] = workflow
         self._idempotency_fingerprints[request.idempotency_key] = fingerprint
-        self._idempotency_workflow_ids[request.idempotency_key] = workflow_id
+        self._idempotency_workflow_ids[request.idempotency_key] = workflow.workflow_id
         return WorkflowCreateOutput(workflow=workflow)
 
     def get(self, workflow_id: str) -> MunicipalWorkflow:
@@ -185,28 +210,7 @@ class MunicipalWorkflowService:
     ) -> MunicipalWorkflow:
         with self._lock:
             workflow = self.get(workflow_id)
-            if request.to_status not in _ALLOWED_TRANSITIONS[workflow.status]:
-                raise InvalidTransitionError(
-                    f"Transition {workflow.status} -> {request.to_status} is not allowed"
-                )
-
-            now = self.clock()
-            event = AuditEvent(
-                sequence=len(workflow.audit_events) + 1,
-                occurred_at=now,
-                event_type="transitioned",
-                from_status=workflow.status,
-                to_status=request.to_status,
-                actor_role=request.actor_role,
-                reason=request.reason,
-            )
-            updated = workflow.model_copy(
-                update={
-                    "status": request.to_status,
-                    "audit_events": (*workflow.audit_events, event),
-                    "updated_at": now,
-                }
-            )
+            updated = _transition_workflow(workflow, request, self.clock())
             self._workflows[workflow_id] = updated
             return updated
 
@@ -216,27 +220,98 @@ class MunicipalWorkflowService:
         checked_at: datetime | None = None,
     ) -> EscalationCheckOutput:
         with self._lock:
-            workflow = self.get(workflow_id)
-            now = checked_at or self.clock()
-            terminal = workflow.status in {"resolved", "failed"}
-            eligible = (
-                not terminal
-                and workflow.status != "escalated"
-                and now >= workflow.escalation_due_at
-            )
-            if terminal:
-                reason = "Terminal workflows are not eligible for escalation."
-            elif workflow.status == "escalated":
-                reason = "Workflow is already escalated."
-            elif eligible:
-                reason = "Acknowledgement or resolution deadline has passed."
-            else:
-                reason = "Escalation deadline has not passed."
-            return EscalationCheckOutput(
-                workflow_id=workflow.workflow_id,
-                status=workflow.status,
-                eligible=eligible,
-                escalation_due_at=workflow.escalation_due_at,
-                checked_at=now,
-                reason=reason,
-            )
+            return _escalation_check(self.get(workflow_id), checked_at or self.clock())
+
+    def escalate_due(self) -> list[MunicipalWorkflow]:
+        """Advance overdue nonterminal workflows once in the offline process."""
+        with self._lock:
+            now = self.clock()
+            request = WorkflowTransitionInput(to_status="escalated", actor_role="system-scheduler",
+                                              reason="Escalation deadline passed without resolution.")
+            updated = []
+            for workflow in list(self._workflows.values()):
+                if _escalation_check(workflow, now).eligible:
+                    result = _transition_workflow(workflow, request, now)
+                    self._workflows[workflow.workflow_id] = result
+                    updated.append(result)
+            return updated
+
+
+class SqliteMunicipalWorkflowService:
+    """Opt-in local durable workflow store; each mutation is atomic across processes."""
+
+    def __init__(self, path: Path, clock: Callable[[], datetime] | None = None) -> None:
+        if not path.parent.is_dir():
+            raise FileNotFoundError(f"Workflow database directory does not exist: {path.parent}")
+        self.path = path
+        self.clock = clock or (lambda: datetime.now(UTC))
+        with closing(self._connect()) as db, db:
+            db.execute("""CREATE TABLE IF NOT EXISTS workflows (
+                workflow_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE,
+                fingerprint TEXT NOT NULL, document TEXT NOT NULL)""")
+
+    def _connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.path, timeout=10)
+        db.execute("PRAGMA busy_timeout=10000")
+        return db
+
+    def create(self, request: WorkflowCreateInput) -> WorkflowCreateOutput:
+        fingerprint = MunicipalWorkflowService._fingerprint(request)
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT fingerprint, document FROM workflows WHERE idempotency_key=?",
+                             (request.idempotency_key,)).fetchone()
+            if row:
+                if row[0] != fingerprint:
+                    raise WorkflowConflictError("Idempotency key was already used for different workflow content")
+                return WorkflowCreateOutput(workflow=MunicipalWorkflow.model_validate_json(row[1]),
+                                            idempotent_replay=True)
+            workflow = _new_workflow(request, self.clock(), "sqlite_local")
+            db.execute("INSERT INTO workflows VALUES (?, ?, ?, ?)",
+                       (workflow.workflow_id, request.idempotency_key, fingerprint,
+                        workflow.model_dump_json()))
+        return WorkflowCreateOutput(workflow=workflow)
+
+    def get(self, workflow_id: str) -> MunicipalWorkflow:
+        with closing(self._connect()) as db, db:
+            row = db.execute("SELECT document FROM workflows WHERE workflow_id=?", (workflow_id,)).fetchone()
+        if row is None:
+            raise WorkflowNotFoundError(workflow_id)
+        return MunicipalWorkflow.model_validate_json(row[0])
+
+    def transition(self, workflow_id: str, request: WorkflowTransitionInput) -> MunicipalWorkflow:
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT document FROM workflows WHERE workflow_id=?", (workflow_id,)).fetchone()
+            if row is None:
+                raise WorkflowNotFoundError(workflow_id)
+            updated = _transition_workflow(MunicipalWorkflow.model_validate_json(row[0]), request, self.clock())
+            db.execute("UPDATE workflows SET document=? WHERE workflow_id=?",
+                       (updated.model_dump_json(), workflow_id))
+        return updated
+
+    def check_escalation(self, workflow_id: str,
+                         checked_at: datetime | None = None) -> EscalationCheckOutput:
+        return _escalation_check(self.get(workflow_id), checked_at or self.clock())
+
+    def escalate_due(self) -> list[MunicipalWorkflow]:
+        """Atomically advance overdue workflows; repeated invocations are safe."""
+        now = self.clock()
+        request = WorkflowTransitionInput(to_status="escalated", actor_role="system-scheduler",
+                                          reason="Escalation deadline passed without resolution.")
+        updated = []
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            for workflow_id, document in db.execute("SELECT workflow_id, document FROM workflows").fetchall():
+                workflow = MunicipalWorkflow.model_validate_json(document)
+                if _escalation_check(workflow, now).eligible:
+                    result = _transition_workflow(workflow, request, now)
+                    db.execute("UPDATE workflows SET document=? WHERE workflow_id=?",
+                               (result.model_dump_json(), workflow_id))
+                    updated.append(result)
+        return updated
+
+
+def build_municipal_service_from_environment() -> MunicipalWorkflowService | SqliteMunicipalWorkflowService:
+    path = os.getenv("HEATSHIELD_WORKFLOW_DB")
+    return SqliteMunicipalWorkflowService(Path(path)) if path else MunicipalWorkflowService()

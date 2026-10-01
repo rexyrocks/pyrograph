@@ -11,9 +11,10 @@ estimates. These use approximate radiant temperature and daily aggregate weather
 they are not validated peak-exposure or health measurements. UTCI outside its
 applicability limits is null with an explicit availability status.
 
-See `docs/milestone-1.md` for verification and remaining phase gates.
+See `docs/milestone-2.md` for current phase gates and `docs/milestone-1.md` for the first serving milestone.
 A 2025 fixed-lead pilot found the forecast-temperature threshold baseline ahead of the classifier on CSI at leads 3–5; see `docs/data/fixed-lead-2025-pilot.md`.
 An individual-run 9-km ECMWF replay for every May 2024 and May 2025 initialization also found no classifier advantage on the positive 2024 cases; May 2025 had no positive labels in its scored targets. See `docs/data/single-run-2024-2025-pilot.md` for the precise lead and publication assumptions.
+A locked April–June 2026 replay retrieved 91 runs but had no positive ERA5 heatwave labels in its scored targets; 13 runs per lead were excluded for impossible radiation or missing hourly values. See `docs/data/single-run-2026-result.md`. Detection skill remains unproven.
 
 ## Run
 
@@ -83,8 +84,12 @@ The service provides:
 - `/municipal/workflows` — role ownership, acknowledgement, escalation checks,
   state transitions, and an append-only audit trail
 
-The alerts and municipal workflow are explicitly in-memory demo services. See
+By default, alerts and municipal workflows use in-memory demo services. See
 `docs/operations-demo.md` for their contracts and production limitations.
+Municipal workflows can instead use an opt-in local SQLite file through
+`HEATSHIELD_WORKFLOW_DB`; an external scheduler can invoke
+`python3 -m scripts.escalate_due` with the same path. Alert receipts remain
+in-memory and no real messages are sent.
 
 Clients send the eight raw weather values and six lag values. The backend
 reads the fixed-reference climatological normal and P95/P98 thresholds,

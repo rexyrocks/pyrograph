@@ -1,5 +1,7 @@
 # Milestone 1 — corrected serving and thermal integration
 
+For the later implementation and current phase status, see `milestone-2.md`.
+
 Implemented locally on `sol/integeration`, starting from `f21ca56`, 2 October 2026.
 
 ## Delivered
@@ -43,10 +45,10 @@ Deploy backend and frontend as a coordinated release: a new frontend intentional
 |---|---|---|
 | 0 — baseline and requirements | Baseline recorded; original SIH verification pending | Confirm exact original statement and pilot geography |
 | 1 — data | Public-source inventory, fixed-lead archive and 62 archived individual 9-km ECMWF runs evaluated | Reusable ward vectors, compatible demographics, local health outcomes, observed issue times and independent station/official verification |
-| 2 — modelling and handoff | Serving handoff complete; fixed-lead and single-run pilots performed | More untouched positive events and calibration; current classifier has not beaten the temperature threshold on forecast-hazard CSI |
+| 2 — modelling and handoff | Serving handoff complete; fixed-lead and single-run pilots performed, including a locked 2026 hot-season replay | More independent positive events and calibration; 2026 had no positive labels, while the 2024 positive-event pilot did not show classifier advantage |
 | 3 — thermal integration | API/UI integration complete | Independent scientific validation and improved exposure inputs |
 | 4 — GIS | Not implemented | Verified geometry and local data joins |
 | 5 — health model | Data-dependent | Outcome data, justified model and held-out validation |
-| 6 — response | Existing offline simulation | Durable storage, operator identity, delivery integration and escalation scheduler |
+| 6 — response | Offline simulation plus opt-in transactional SQLite municipal workflow and one-shot escalation job | Durable alert storage, operator identity, real provider/consent integration, mounted database and deployed scheduler |
 | 7 — UI | First milestone browser-verified | GIS and operator journeys plus localisation |
 | 8 — release | Not started | Container, deployment, reliability and submission evidence |

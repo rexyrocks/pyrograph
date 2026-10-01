@@ -28,7 +28,7 @@ from backend.municipal import (
     EscalationCheckOutput,
     InvalidTransitionError,
     MunicipalWorkflow,
-    MunicipalWorkflowService,
+    build_municipal_service_from_environment,
     WorkflowConflictError,
     WorkflowCreateInput,
     WorkflowCreateOutput,
@@ -103,7 +103,7 @@ def _load_runtime(app: FastAPI) -> None:
 async def lifespan(app: FastAPI):
     _load_runtime(app)
     app.state.alert_service = build_alert_service_from_environment()
-    app.state.municipal_service = MunicipalWorkflowService()
+    app.state.municipal_service = build_municipal_service_from_environment()
     yield
 
 

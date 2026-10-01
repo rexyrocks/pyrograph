@@ -40,6 +40,17 @@ class SingleRunReplayTests(unittest.TestCase):
                                      'hourly_units': {**EXPECTED_UNITS, 'wind_speed_10m': 'm/s'},
                                      'hourly': {}})
 
+    def test_impossible_negative_radiation_excludes_the_day(self):
+        day = date(2026, 4, 5)
+        hourly = {'time': [f'{day.isoformat()}T{hour:02d}:00' for hour in range(24)]}
+        for name in HOURLY_FIELDS:
+            hourly[name] = [30.0] * 24
+        hourly['shortwave_radiation'][14] = -15295.0
+        daily, coverage = aggregate_complete_days({'timezone': 'Asia/Kolkata',
+                                                   'hourly_units': EXPECTED_UNITS, 'hourly': hourly})
+        self.assertNotIn(day, daily)
+        self.assertEqual(coverage[day.isoformat()]['invalid'], ['shortwave_radiation'])
+
 
 if __name__ == '__main__':
     unittest.main()

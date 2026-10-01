@@ -57,8 +57,19 @@ changes after a terminal state return HTTP 409. Every accepted transition
 appends a timestamped, immutable audit event.
 
 `GET /municipal/workflows/{workflow_id}/escalation` calculates eligibility on
-demand. It does not need a background scheduler or perform an automatic state
-change.
+demand. It does not itself change state. An optional one-shot job can advance
+overdue, nonterminal workflows to `escalated` exactly once and append a system
+audit event:
+
+```bash
+HEATSHIELD_WORKFLOW_DB=work/municipal.sqlite python3 -m scripts.escalate_due
+```
+
+Set the same `HEATSHIELD_WORKFLOW_DB` path on the API to enable the opt-in
+SQLite workflow store. Its parent directory must already exist. Restarting
+the API with the same database preserves workflows, idempotency keys and
+audit history. The job must be invoked by a trusted scheduler for timely
+escalation; this repository does not deploy such a scheduler.
 
 ## Authentication and storage limitations
 
@@ -66,10 +77,14 @@ All operations endpoints in `backend/vercel_app.py` require `X-API-Key`. The
 browser-facing Vercel proxy exposes them only when
 `HEATSHIELD_OPERATIONS_DEMO_ENABLED=true`; they otherwise return 404.
 
-Records are deliberately labelled `in_memory_demo`. They are lost on restart
-and are not shared across Railway workers or serverless instances. A persistent
-database, operator authentication, authorization, recipient consent, quiet-hour
-rules, and a secrets-backed provider adapter are required before real delivery.
+Without the database setting, records are labelled `in_memory_demo` and lost
+on restart. With it, workflows are labelled `sqlite_local` and mutations are
+transactional across local processes, but a container without a persistent
+mounted volume will still lose the database on replacement. Alert delivery
+records remain in-memory in both modes. Operator authentication,
+authorization, recipient consent, quiet-hour rules, a deployed escalation
+scheduler, durable alert storage and a secrets-backed provider adapter are
+required before real delivery.
 
 ## Verification
 
