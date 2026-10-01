@@ -17,9 +17,6 @@ jobs:
       - name: Install backend test dependencies
         run: python -m pip install -r requirements.txt
       - name: Test backend and offline operations
-        env:
-          HEATSHIELD_API_KEY: ci-only-heatshield-api-key-0000000000000000
-          HEATSHIELD_ALERT_PROVIDER: demo
         run: |
           python -m unittest -q
           python -m scripts.rehearse_demo > /tmp/pyrograph-rehearsal.json
