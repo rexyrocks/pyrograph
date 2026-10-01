@@ -153,3 +153,22 @@ container data. Regression tests and browser checks now cover these behaviors.
 mark both evaluations as preliminary retrospective work. Do not claim forecast
 skill or mortality calibration. See `docs/demo-readiness.md` for results and
 the still-required built-image smoke check on a Docker-enabled host.
+
+## D-012 — Preserve the temperature baseline and block unsupported ward precision
+
+**Decision (2 October 2026):** Keep the corrected classifier preliminary and
+show the forecast-temperature P95 rule alongside its dashboard explanation.
+Require exact local dates and model input units from the weather provider.
+Do not publish current ward risk from DataMeet's 77-polygon Jaipur file when
+the municipal profile describes a 150-ward structure.
+
+**Evidence:** A 2025 fixed-lead 0.25° forecast pilot and 2024/2025 9-km
+single-run replays found no classifier advantage over the temperature rule on
+the positive labels available. The single-run replay used complete target and
+lag days from the same initialization. Official and community geometry source
+checks are recorded in `docs/data/current-ward-and-health-gates.md`.
+
+**Exit conditions:** More independent positive events, actual publication
+times, official or station verification, current reusable vector geometry,
+and matching population data. Mortality probability remains unavailable until
+local health outcomes support calibration and validation.

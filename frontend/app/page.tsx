@@ -185,6 +185,8 @@ export default function Home() {
   const [updatedAt, setUpdatedAt] = useState('Loading live outlook…');
   const displayedOutlook = sampleMode ? sampleOutlook : outlook;
   const selected = displayedOutlook[selectedDay];
+  const temperatureRuleFlags = selected.temperature >= selected.p95;
+  const classifierFlags = selected.risk === 'High' || selected.risk === 'Severe';
   const hasOutlook = sampleMode || apiStatus === 'live';
   const demoWard = useMemo(
     () => demoWards.find((ward) => ward.wardId === selectedDemoWard) ?? null,
@@ -377,6 +379,7 @@ export default function Home() {
                     <p>Model: {selected.modelVersion ?? "Synthetic scenario"} · Reference: 2015–2018</p>
                     <ul className="reason-list">
                       <li><span>Uncalibrated model estimate</span><b>{selected.probability.toFixed(1)}%</b></li>
+                      <li><span>Forecast-temperature rule</span><b>{temperatureRuleFlags ? 'P95 crossed' : 'Below P95'}</b></li>
                       <li><span>Departure from normal</span><b>{selected.temperature - selected.normal >= 0 ? '+' : ''}{(selected.temperature - selected.normal).toFixed(1)}°C</b></li>
                       <li><span>Persistence check</span><b>{selected.persistenceMet === true ? 'Met · day 2 of 2' : selected.persistenceMet === false ? 'Not met' : 'Pending prior day'}</b></li>
                       <li><span>P98 severe threshold</span><b>{selected.p98.toFixed(1)}°C</b></li>
@@ -384,6 +387,7 @@ export default function Home() {
                     <p className="explain-note">
                       The model uses a fixed 2015–2018 climate reference with separate fitting, selection and test periods.
                       Retrospective results do not establish advance forecast accuracy.
+                      {!sampleMode && (classifierFlags !== temperatureRuleFlags ? ' The classifier and temperature rule disagree for this date; treat this as an unresolved preliminary result.' : ' The classifier and temperature rule agree for this date, but that agreement does not validate either forecast.')}
                       Percentile thresholds and this daily hazard label are not an official IMD declaration.
                       Persistence must be assessed separately; unknown is not confirmed.
                     </p>
