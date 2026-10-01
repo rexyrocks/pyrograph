@@ -1,9 +1,19 @@
 # SIH26083 — Extreme Heatwave Early Warning System
 
 Preliminary Jaipur heat-hazard classifier and uncalibrated planning-index demo.
-The current serving model is from the legacy retrospective experiment. Its
-metrics do not establish advance forecast skill, mortality risk or statewide
-validity. A corrected evaluation is now available separately.
+Both API entrypoints now use the integrity-checked `artifacts/jaipur-fixed-v2`
+bundle (fixed 2015–2018 reference; fit 2019–2021; select 2022; test 2023–2024).
+This is a local serving upgrade, not independent advance-forecast validation or
+a deployment. Mortality probability remains unavailable.
+
+Prediction responses include model version, reference period and daily WBGT/UTCI
+estimates. These use approximate radiant temperature and daily aggregate weather;
+they are not validated peak-exposure or health measurements. UTCI outside its
+applicability limits is null with an explicit availability status.
+
+See `docs/milestone-1.md` for verification and remaining phase gates.
+A 2025 fixed-lead pilot found the forecast-temperature threshold baseline ahead of the classifier on CSI at leads 3–5; see `docs/data/fixed-lead-2025-pilot.md`.
+An individual-run 9-km ECMWF replay for every May 2024 and May 2025 initialization also found no classifier advantage on the positive 2024 cases; May 2025 had no positive labels in its scored targets. See `docs/data/single-run-2024-2025-pilot.md` for the precise lead and publication assumptions.
 
 ## Run
 
@@ -17,8 +27,13 @@ The corrected evaluation fixes the climate reference to 2015–2018, trains on
 2019–2021, selects on 2022, and tests only the selected model on 2023–2024.
 It uses realised daily weather and a short ±7-day percentile reference. The
 period has been inspected in earlier experiments; fresh external validation is
-still required. This command writes a report and does not replace serving
-artifacts. See `docs/evaluation-retrospective-v2.json` and `docs/demo-readiness.md`.
+still required. This command writes an evaluation report. Export a new immutable serving bundle with:
+
+```bash
+python3 -m scripts.export_serving --data data/jaipur_daily_2015_2024.csv --bundle-dir artifacts/NEW_VERSION
+```
+
+The exporter never deploys and refuses to overwrite an existing bundle. See `docs/evaluation-retrospective-v2.json` and `docs/demo-readiness.md`.
 
 `wbgt` and `utci` are produced by the separate `thermal` pipeline for heat-stress
 reporting and dashboard use. They intentionally remain outside the 17-feature
@@ -27,7 +42,7 @@ test period and must not be represented as independent final validation.
 
 ## Legacy serving artifacts in outputs/
 
-These are retained for reproducibility. Their original LOYO preprocessing
+These are retained for reproducibility and are no longer loaded by either API. Their original LOYO preprocessing
 included held-out years in training climatology and used test CSI to select
 the model. `evaluation_metrics.json` explicitly records those limitations.
 
@@ -72,7 +87,7 @@ The alerts and municipal workflow are explicitly in-memory demo services. See
 `docs/operations-demo.md` for their contracts and production limitations.
 
 Clients send the eight raw weather values and six lag values. The backend
-calculates the LOYO climatological normal, P95/P98 thresholds,
+reads the fixed-reference climatological normal and P95/P98 thresholds,
 `tmax_departure`, and cyclical date features. `severe` is true only when the
 binary model predicts heatwave and `tmax` reaches the P98 threshold. An alert
 is triggered only after two consecutive predicted heatwave days.
@@ -86,8 +101,8 @@ training labels for daily local mortality. See
 `docs/mortality-risk-index.md` for its formula, limitations, and calibration
 requirements.
 
-Artifact locations can be overridden with `HEATWAVE_MODEL_PATH`,
-`HEATWAVE_FEATURES_PATH`, and `HEATWAVE_CLIMATOLOGY_PATH`. Browser origins are
+Select an entire versioned bundle with `HEATWAVE_BUNDLE_DIR`. Independent legacy
+artifact overrides are rejected to prevent mixed models and climate references. Browser origins are
 configured as a comma-separated `CORS_ORIGINS` value.
 
 Run the backend tests with:
@@ -138,8 +153,7 @@ API rehearsal; the page does not claim an implemented operations console.
 
 > **Note:** Railway is now the active backend deployment. This section remains for historical reference.
 
-The production container uses the lightweight native XGBoost Booster artifact,
-not the training-time joblib bundle. Deploy it from this directory with:
+The production container uses the native XGBoost bundle and thermal dependencies. Deploy it from this directory with:
 
 ```bash
 gcloud run deploy heatshield-jaipur-api \

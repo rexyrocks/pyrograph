@@ -34,6 +34,17 @@ def main():
                 if attempt == 59:
                     raise
                 time.sleep(1)
+        info = get('/model/info')
+        assert info['model_version'] == 'jaipur-fixed-v2'
+        payload = {'date': '2026-05-01', 'tmax': 35, 'tmin': 23.8, 'tmean': 29.6,
+                   'rh_mean': 47, 'wind_speed_max': 14.3, 'pressure_mean': 961.9,
+                   'solar_radiation_sum': 20.15, 'cloud_cover_mean': 18,
+                   'tmax_lag1': 33.8, 'tmax_lag2': 33.8, 'tmax_lag3': 33.4,
+                   'tmin_lag1': 23.4, 'tmin_lag2': 23.5, 'tmin_lag3': 24.6}
+        response = json.load(urlopen(Request(base + '/predict', data=json.dumps(payload).encode(),
+                             headers={'X-API-Key': key, 'Content-Type': 'application/json'}), timeout=60))
+        assert response['model_version'] == 'jaipur-fixed-v2'
+        assert response['thermal']['status'] == 'estimated'
         wards = get('/demographics/wards')
         assert wards['count'] == 5
         assert wards['suitable_for_operational_use'] is False

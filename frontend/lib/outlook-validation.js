@@ -27,6 +27,25 @@ export function validateOutlook(payload, now = new Date()) {
         throw new Error(`Invalid forecast field: ${field}`);
       }
     }
+    if (typeof item.model_version !== 'string' || !item.model_version || item.reference_period !== '2015-2018') {
+      throw new Error('Missing corrected model provenance');
+    }
+    const thermal = item.thermal;
+    if (!thermal || thermal.method_version !== 'daily-approximation-v1' || thermal.units !== 'degC' ||
+        !['estimated', 'partial', 'unavailable'].includes(thermal.status) ||
+        !Array.isArray(thermal.assumptions) || !thermal.assumptions.every(value => typeof value === 'string') ||
+        !(thermal.unavailable_reason === null || typeof thermal.unavailable_reason === 'string')) {
+      throw new Error('Invalid thermal provenance');
+    }
+    const available = ['wbgt_c', 'utci_c'].map(key => {
+      if (thermal[key] !== null && (typeof thermal[key] !== 'number' || !Number.isFinite(thermal[key]))) {
+        throw new Error('Invalid thermal value');
+      }
+      return thermal[key] !== null;
+    }).filter(Boolean).length;
+    if (thermal.status !== (available === 2 ? 'estimated' : available === 1 ? 'partial' : 'unavailable')) {
+      throw new Error('Inconsistent thermal availability');
+    }
     if (item.heatwave_probability < 0 || item.heatwave_probability > 1 ||
         ![0, 1].includes(item.heatwave_prediction) || typeof item.severe !== 'boolean' ||
         ![true, false, null].includes(item.persistence_met) ||

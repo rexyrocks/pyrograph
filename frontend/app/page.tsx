@@ -34,6 +34,15 @@ import demographicsCsv from '../../data/processed/fixtures_synthetic_wards.csv?r
 
 type Risk = 'Moderate' | 'High' | 'Severe';
 type ImpactBand = 'Low' | Risk;
+type ThermalEstimate = {
+  method_version: string;
+  status: 'estimated' | 'partial' | 'unavailable';
+  wbgt_c: number | null;
+  utci_c: number | null;
+  units: 'degC';
+  assumptions: string[];
+  unavailable_reason: string | null;
+};
 
 type OutlookItem = {
   day: string;
@@ -46,6 +55,8 @@ type OutlookItem = {
   p95: number;
   p98: number;
   persistenceMet: boolean | null;
+  thermal?: ThermalEstimate;
+  modelVersion?: string;
 };
 
 type LiveOutlookRecord = {
@@ -59,6 +70,9 @@ type LiveOutlookRecord = {
   climatology_p95: number;
   climatology_p98: number;
   persistence_met: boolean | null;
+  model_version: string;
+  reference_period: string;
+  thermal: ThermalEstimate;
 };
 
 type LiveOutlookResponse = {
@@ -264,6 +278,8 @@ export default function Home() {
             p95: item.climatology_p95,
             p98: item.climatology_p98,
             persistenceMet: item.persistence_met,
+            thermal: item.thermal,
+            modelVersion: item.model_version,
           };
         });
         setOutlook(liveOutlook);
@@ -357,7 +373,8 @@ export default function Home() {
                   <div className="reason-body">
                     <div className="threshold-card current"><span>Forecast Tmax</span><b>{selected.temperature.toFixed(1)}°C</b></div>
                     <div className="threshold-flow"><span /> compared with <span /></div>
-                    <div className="threshold-card"><span>LOYO P95 threshold</span><b>{selected.p95.toFixed(1)}°C</b></div>
+                    <div className="threshold-card"><span>Fixed-reference P95 threshold</span><b>{selected.p95.toFixed(1)}°C</b></div>
+                    <p>Model: {selected.modelVersion ?? "Synthetic scenario"} · Reference: 2015–2018</p>
                     <ul className="reason-list">
                       <li><span>Uncalibrated model estimate</span><b>{selected.probability.toFixed(1)}%</b></li>
                       <li><span>Departure from normal</span><b>{selected.temperature - selected.normal >= 0 ? '+' : ''}{(selected.temperature - selected.normal).toFixed(1)}°C</b></li>
@@ -365,8 +382,8 @@ export default function Home() {
                       <li><span>P98 severe threshold</span><b>{selected.p98.toFixed(1)}°C</b></li>
                     </ul>
                     <p className="explain-note">
-                      The serving model comes from a preliminary retrospective experiment.
-                      Its original LOYO evaluation allowed future years into training climatology.
+                      The model uses a fixed 2015–2018 climate reference with separate fitting, selection and test periods.
+                      Retrospective results do not establish advance forecast accuracy.
                       Percentile thresholds and this daily hazard label are not an official IMD declaration.
                       Persistence must be assessed separately; unknown is not confirmed.
                     </p>
@@ -394,6 +411,19 @@ export default function Home() {
       </section>
 
       <div className="page-wrap">
+        <section className="section-block" aria-label="Daily thermal estimates">
+          <div className="section-heading"><div><span className="kicker">Thermal stress</span><h2>Daily thermal estimates</h2></div></div>
+          {selected.thermal ? <>
+            <div className="mini-stats">
+              <span><small>WBGT estimate</small><b>{selected.thermal.wbgt_c === null ? 'Unavailable' : `${selected.thermal.wbgt_c.toFixed(1)}°C`}</b></span>
+              <span><small>UTCI estimate</small><b>{selected.thermal.utci_c === null ? 'Unavailable' : `${selected.thermal.utci_c.toFixed(1)}°C`}</b></span>
+              <span><small>Forecast date</small><b>{selected.date}</b></span>
+            </div>
+            <p>Estimates use daily weather and approximate radiation. They do not represent peak-hour exposure or mortality risk.</p>
+            {selected.thermal.unavailable_reason && <p role="note">{selected.thermal.unavailable_reason}</p>}
+            <details><summary>Calculation assumptions</summary><ul>{selected.thermal.assumptions.map(text => <li key={text}>{text}</li>)}</ul></details>
+          </> : <p>Thermal estimates are unavailable for this synthetic scenario.</p>}
+        </section>
         <section id="overview" className="forecast-section section-block">
           <div className="section-heading">
             <div>

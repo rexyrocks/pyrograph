@@ -21,6 +21,8 @@ const forecast = () => ({
       heatwave_probability: .255, heatwave_prediction: 0, severe: false,
       persistence_met: false, climatology_normal: 32, climatology_p95: 37,
       climatology_p98: 39, lag_source: 'historical',
+      model_version: 'jaipur-fixed-v2', reference_period: '2015-2018',
+      thermal: { method_version: 'daily-approximation-v1', units: 'degC', status: 'estimated', wbgt_c: 26.1, utci_c: 34.2, assumptions: ['Controlled test inputs'], unavailable_reason: null },
     };
   }),
 });
@@ -30,6 +32,20 @@ async function scenario(name, mode, viewport, verify) {
   page.on('pageerror', error => errors.push(`${name}: ${error.message}`));
   await page.route('**/api/outlook', async route => {
     const data = forecast();
+    if (mode === 'model') {
+      const records = data.outlook.map(item => ({
+        date: item.date, tmax: 35, tmin: 23.8, tmean: 29.6, rh_mean: 47,
+        wind_speed_max: 14.3, pressure_mean: 961.9, solar_radiation_sum: 20.15,
+        cloud_cover_mean: 18, tmax_lag1: 33.8, tmax_lag2: 33.8, tmax_lag3: 33.4,
+        tmin_lag1: 23.4, tmin_lag2: 23.5, tmin_lag3: 24.6,
+      }));
+      const prediction = await page.request.post('http://127.0.0.1:18766/predict/batch', {
+        headers: { 'X-API-Key': 'local-browser-test-key-00000000000000' }, data: { records },
+      });
+      assert.equal(prediction.status(), 200);
+      const result = await prediction.json();
+      data.outlook = result.predictions.map((item, index) => ({ ...item, tmax: records[index].tmax, lag_source: index === 0 ? 'historical' : 'forecast_bootstrap' }));
+    }
     if (mode === 'stale') data.generated_at = '2020-01-01T00:00:00Z';
     await route.fulfill({ status: mode === 'failure' ? 502 : 200, contentType: 'application/json', body: JSON.stringify(data) });
   });
@@ -49,6 +65,17 @@ async function scenario(name, mode, viewport, verify) {
 }
 
 try {
+  await scenario('corrected-model-and-thermal', 'model', { width: 1440, height: 1000 }, async page => {
+    await page.getByText('LIVE FORECAST —', { exact: false }).waitFor();
+    await page.locator('.impact-number').waitFor();
+    const thermal = page.getByRole('region', { name: 'Daily thermal estimates' });
+    await thermal.getByRole('heading', { name: 'Daily thermal estimates' }).waitFor();
+    assert.match(await thermal.innerText(), /WBGT estimate/);
+    assert.match(await thermal.innerText(), /UTCI estimate/);
+    assert.equal((await thermal.innerText()).includes('Unavailable'), false);
+    await page.getByRole('button', { name: 'Explain this scenario' }).click();
+    await page.getByText('Model: jaipur-fixed-v2', { exact: false }).waitFor();
+  });
   await scenario('live-and-api-boundary', 'live', { width: 1440, height: 1000 }, async page => {
     await page.getByText('LIVE FORECAST —', { exact: false }).waitFor();
     await page.getByText('Low planning priority', { exact: true }).waitFor();
