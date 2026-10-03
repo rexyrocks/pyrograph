@@ -1,6 +1,6 @@
-# Pyrograph phase gate — 2 October 2026
+# Pyrograph phase gate — 3 October 2026
 
-This is the honest end-to-end status of the local `sol/integeration` branch after the second implementation pass. The code now covers more of the forecast, data-quality and municipal workflow path. **No phase requiring current ward data, health outcomes or real delivery is complete end to end.** The public site has not been changed by this local work.
+This is the honest end-to-end status of `sol/integeration` after the second implementation pass and release checks. The code now covers more of the forecast, data-quality and municipal workflow path. **No phase requiring current ward data, health outcomes or real delivery is complete end to end.** The production site and `main` have not been changed by this branch.
 
 ## Work completed in this pass
 
@@ -8,7 +8,8 @@ This is the honest end-to-end status of the local `sol/integeration` branch afte
 - A locked April–June 2026 single-run 9-km ECMWF replay retrieved 91 initialized forecasts. Per lead, 78 target records passed the feature contract; 13 were omitted. There were **zero ERA5 Tmax ≥ fixed-P95 positive labels**, so this period cannot measure event detection. Eleven runs had physically impossible negative radiation and two had missing hourly weather; affected days were excluded and recorded rather than repaired. See `docs/data/single-run-2026-result.md`.
 - Current ward source checks confirmed a 150-ward municipal structure. DataMeet's reusable Jaipur GeoJSON contains only 77 polygons, so it remains an inspected historical source and is not used for present ward risk. Public surveillance guidance is available, but no suitable daily Jaipur health-outcome series was found. See `docs/data/current-ward-and-health-gates.md`.
 - Municipal workflows and offline alert receipts now support opt-in transactional SQLite local storage. Idempotency, duplicate suppression, transitions and audit history survive process restart; a one-shot job advances overdue workflows once. The default mode and alert provider remain offline. A trusted scheduler and mounted persistent volume are required in any deployment using that store.
-- A GitHub Actions workflow runs backend tests, the offline rehearsal, frontend validation/build and Docker image smoke on a Docker-capable runner. A fully green run is required before release.
+- [GitHub Actions run 37129768539](https://github.com/rexyrocks/pyrograph/actions/runs/37129768539) passed backend tests, the offline rehearsal, frontend validation/build and Docker image smoke for commit `6335dbc`.
+- A separate Railway `staging` environment runs the integration API image with a staging-only key and demo alert provider; no real delivery is configured. HTTPS `/health` returned 200; unauthenticated `/model/info` returned 401; authenticated model metadata, batch inference with thermal output and planning-index assessment returned 200. The real local frontend outlook handler combined live Open-Meteo weather with this staging API and returned five days beginning 3 October 2026. The Vercel frontend Preview has not yet been verified end to end because storing the staging key there awaits explicit approval.
 
 ## Phase status and the remaining gate
 
@@ -22,7 +23,7 @@ This is the honest end-to-end status of the local `sol/integeration` branch afte
 | 5 — mortality/hospitalisation risk | Blocked on outcomes | Public guidance describes surveillance reporting, but there is no compatible dated Jaipur outcome series to fit and validate a daily local health model. The API correctly returns `mortality_probability: null`; the existing index is uncalibrated. |
 | 6 — alerts and municipal action | Partial | Offline SMS/WhatsApp simulation, role actions, audit history and opt-in local alert/workflow persistence work. Real messages require an approved provider, recipients/consent, authenticated operators, production-grade storage and a deployed escalation scheduler. |
 | 7 — dashboard and journeys | Partial | City-level forecast, thermal context, planning scenario and source/freshness checks work. Current ward GIS, operator console and localisation are absent. |
-| 8 — release | Partial | 59 Python tests, four Node tests, both frontend builds, offline rehearsal and a Python 3.12 startup/inference/thermal/SQLite check passed locally. Docker/Podman are unavailable here, so the exact image smoke test depends on CI. A green full run, staging integration and real-delivery trial are still required. |
+| 8 — release | Partial | The latest full CI run, including the production Docker image smoke test, is green. The isolated staging API and local frontend-to-staging live outlook passed. A Vercel frontend Preview connected to staging, browser verification, rollback rehearsal and any authorized real-delivery trial remain open. |
 
 ## External facts behind the data gates
 
@@ -30,7 +31,7 @@ The [Jaipur municipal profile](https://jaipurmc.org/Presentation/AboutMcjaipur/C
 
 ## Next workable steps
 
-1. Run the new CI on a reviewed branch and resolve any Linux/container failures before release. Exercise real frontend/backend integration against a staging deployment, with a rollback plan.
+1. With explicit approval to store the staging-only key in Vercel Preview, deploy the integration frontend Preview and verify the five-day live outlook and planning journey in a browser. Recheck CI for any new commit, document a rollback path, and keep `main` unmerged until these release checks pass.
 2. Secure a current 150-ward vector and compatible ward population data with provenance and reuse terms. Validate spatial joins before building a choropleth.
 3. Secure aggregated daily Jaipur heat-related cases/deaths with case definitions and reporting coverage. Keep mortality probability unavailable until an independent health-model evaluation is possible.
 4. Collect prospectively archived live-feed forecasts with observed publication times and independent station/official verification, including enough positive heat events to test detection and calibration.
