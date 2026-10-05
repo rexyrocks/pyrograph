@@ -3,3 +3,5 @@ numpy==2.2.4
 pydantic==2.12.4
 uvicorn==0.35.0
 xgboost==3.4.1
+pandas==2.2.3
+pythermalcomfort==4.4.2

@@ -2,26 +2,43 @@
 
 from __future__ import annotations
 
-import json
 import os
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
-from pathlib import Path
 from typing import Annotated, Any
 
-import joblib
+import xgboost as xgb
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.alerts import (
+    AlertConflictError,
+    AlertDispatchInput,
+    AlertDispatchOutput,
+    AlertNotFoundError,
+    AlertRecord,
+    build_alert_service_from_environment,
+)
+from backend.demographics import WardDemographicsCollection, load_ward_demographics
+from backend.municipal import (
+    EscalationCheckOutput,
+    InvalidTransitionError,
+    MunicipalWorkflow,
+    build_municipal_service_from_environment,
+    WorkflowConflictError,
+    WorkflowCreateInput,
+    WorkflowCreateOutput,
+    WorkflowNotFoundError,
+    WorkflowTransitionInput,
+)
+from backend.serving import load_runtime
+from backend.thermal_assessment import ThermalAssessment, assess_thermal
+from backend.risk import RiskAssessmentInput, RiskAssessmentOutput, assess_risk
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MODEL_PATH = PROJECT_ROOT / "outputs" / "best_heatwave_model.joblib"
-DEFAULT_FEATURES_PATH = PROJECT_ROOT / "outputs" / "feature_names.json"
-DEFAULT_CLIMATOLOGY_PATH = PROJECT_ROOT / "outputs" / "loyo_climatology_labels.csv"
-WINDOW_RADIUS_DAYS = 7
+
 
 
 class StrictModel(BaseModel):
@@ -30,14 +47,14 @@ class StrictModel(BaseModel):
 
 class PredictionInput(StrictModel):
     date: date
-    tmax: float
-    tmin: float
-    tmean: float
-    rh_mean: float
-    wind_speed_max: float
-    pressure_mean: float
-    solar_radiation_sum: float
-    cloud_cover_mean: float
+    tmax: float = Field(ge=-90, le=65)
+    tmin: float = Field(ge=-90, le=65)
+    tmean: float = Field(ge=-90, le=65)
+    rh_mean: float = Field(ge=0, le=100)
+    wind_speed_max: float = Field(ge=0)
+    pressure_mean: float = Field(gt=0)
+    solar_radiation_sum: float = Field(ge=0)
+    cloud_cover_mean: float = Field(ge=0, le=100)
     tmax_lag1: float
     tmax_lag2: float
     tmax_lag3: float
@@ -65,6 +82,9 @@ class PredictionOutput(StrictModel):
     climatology_p95: float
     climatology_p98: float
     model_name: str
+    model_version: str
+    reference_period: str
+    thermal: ThermalAssessment
 
 
 class BatchPredictionOutput(StrictModel):
@@ -72,76 +92,15 @@ class BatchPredictionOutput(StrictModel):
     predictions: list[PredictionOutput]
 
 
-class Climatology:
-    """Calculate operational LOYO climatology from the historical tmax archive."""
-
-    def __init__(self, path: Path) -> None:
-        frame = pd.read_csv(path, usecols=["date", "tmax"])
-        frame["date"] = pd.to_datetime(frame["date"], errors="raise")
-        if frame.empty or frame[["date", "tmax"]].isna().any().any():
-            raise ValueError("Climatology archive is empty or contains missing values")
-        self.years = frame["date"].dt.year.to_numpy()
-        self.calendar_days = self._calendar_day_index(frame["date"])
-        self.tmax = frame["tmax"].to_numpy(dtype=float)
-
-    @staticmethod
-    def _calendar_day_index(dates: pd.Series) -> np.ndarray:
-        reference_dates = pd.to_datetime("2000-" + dates.dt.strftime("%m-%d"))
-        return reference_dates.dt.dayofyear.to_numpy()
-
-    @staticmethod
-    def _request_calendar_day(value: date) -> int:
-        return pd.Timestamp(year=2000, month=value.month, day=value.day).dayofyear
-
-    def thresholds(self, target_date: date) -> tuple[float, float, float]:
-        calendar_day = self._request_calendar_day(target_date)
-        direct_distance = np.abs(self.calendar_days - calendar_day)
-        circular_distance = np.minimum(direct_distance, 366 - direct_distance)
-        reference_mask = (self.years != target_date.year) & (
-            circular_distance <= WINDOW_RADIUS_DAYS
-        )
-        values = self.tmax[reference_mask]
-        if values.size == 0:
-            raise ValueError(f"No climatology reference values for {target_date.isoformat()}")
-        return (
-            float(np.mean(values)),
-            float(np.percentile(values, 95)),
-            float(np.percentile(values, 98)),
-        )
-
-
-def _artifact_path(environment_name: str, default: Path) -> Path:
-    return Path(os.getenv(environment_name, str(default))).expanduser().resolve()
-
-
 def _load_runtime(app: FastAPI) -> None:
-    model_path = _artifact_path("HEATWAVE_MODEL_PATH", DEFAULT_MODEL_PATH)
-    features_path = _artifact_path("HEATWAVE_FEATURES_PATH", DEFAULT_FEATURES_PATH)
-    climatology_path = _artifact_path("HEATWAVE_CLIMATOLOGY_PATH", DEFAULT_CLIMATOLOGY_PATH)
-    for path in (model_path, features_path, climatology_path):
-        if not path.is_file():
-            raise FileNotFoundError(f"Required artifact not found: {path}")
-
-    contract = json.loads(features_path.read_text(encoding="utf-8"))
-    features = contract.get("features")
-    if not isinstance(features, list) or not features:
-        raise ValueError("Feature contract must contain a non-empty 'features' list")
-
-    model = joblib.load(model_path)
-    trained_features = [str(value) for value in getattr(model, "feature_names_in_", [])]
-    if trained_features and trained_features != features:
-        raise ValueError("Saved model feature order does not match feature_names.json")
-
-    app.state.model = model
-    app.state.features = features
-    app.state.contract = contract
-    app.state.climatology = Climatology(climatology_path)
-    app.state.model_name = type(model).__name__
+    load_runtime(app)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _load_runtime(app)
+    app.state.alert_service = build_alert_service_from_environment()
+    app.state.municipal_service = build_municipal_service_from_environment()
     yield
 
 
@@ -185,7 +144,7 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
-def _engineer_features(record: PredictionInput, climatology: Climatology) -> tuple[dict[str, float], tuple[float, float, float]]:
+def _engineer_features(record: PredictionInput, climatology: Any) -> tuple[dict[str, float], tuple[float, float, float]]:
     normal, p95, p98 = climatology.thresholds(record.date)
     days_in_year = 366.0 if pd.Timestamp(record.date).is_leap_year else 365.0
     day_of_year = float(record.date.timetuple().tm_yday)
@@ -215,8 +174,8 @@ def _predict(
         raise ValueError(f"Backend cannot construct required model features: {missing}")
     frame = pd.DataFrame([[values[name] for name in expected_features]], columns=expected_features)
     model = request.app.state.model
-    prediction = int(model.predict(frame)[0])
-    probability = float(model.predict_proba(frame)[0, 1])
+    probability = float(model.predict(xgb.DMatrix(frame))[0])
+    prediction = int(probability >= 0.5)
 
     severe = bool(prediction == 1 and record.tmax >= p98)
     persistence_met = (
@@ -235,6 +194,9 @@ def _predict(
         climatology_p95=p95,
         climatology_p98=p98,
         model_name=request.app.state.model_name,
+        model_version=request.app.state.contract["model_version"],
+        reference_period=request.app.state.contract["reference_period"],
+        thermal=assess_thermal(record),
     )
 
 
@@ -259,6 +221,10 @@ def model_info(request: Request) -> dict[str, Any]:
             "severe_is_post_hoc_flag"
         ],
         "persistence_days": 2,
+        "model_version": request.app.state.contract["model_version"],
+        "reference_period": request.app.state.contract["reference_period"],
+        "validation_status": request.app.state.contract["validation_status"],
+        "probability_calibrated": False,
     }
 
 
@@ -287,3 +253,85 @@ def predict_batch(
             previous = None
         results.append(_predict(request, record, previous))
     return BatchPredictionOutput(count=len(results), predictions=results)
+
+
+@app.post("/risk/assess", response_model=RiskAssessmentOutput)
+def risk_assessment(payload: RiskAssessmentInput) -> RiskAssessmentOutput:
+    """Calculate an uncalibrated heat-health planning index."""
+
+    return assess_risk(payload)
+
+
+@app.get("/demographics/wards", response_model=WardDemographicsCollection)
+def ward_demographics() -> WardDemographicsCollection:
+    """Return validated synthetic records for integration testing."""
+
+    return load_ward_demographics()
+
+
+@app.post("/alerts/dispatch", response_model=AlertDispatchOutput)
+def dispatch_alert(
+    request: Request, payload: AlertDispatchInput
+) -> AlertDispatchOutput:
+    """Dispatch through the offline provider; no real message is sent."""
+
+    try:
+        return request.app.state.alert_service.dispatch(payload)
+    except AlertConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/alerts/{alert_id}", response_model=AlertRecord)
+def get_alert(request: Request, alert_id: str) -> AlertRecord:
+    try:
+        return request.app.state.alert_service.get(alert_id)
+    except AlertNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Alert not found") from error
+
+
+@app.post("/municipal/workflows", response_model=WorkflowCreateOutput)
+def create_municipal_workflow(
+    request: Request, payload: WorkflowCreateInput
+) -> WorkflowCreateOutput:
+    try:
+        return request.app.state.municipal_service.create(payload)
+    except WorkflowConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/municipal/workflows/{workflow_id}", response_model=MunicipalWorkflow)
+def get_municipal_workflow(request: Request, workflow_id: str) -> MunicipalWorkflow:
+    try:
+        return request.app.state.municipal_service.get(workflow_id)
+    except WorkflowNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Workflow not found") from error
+
+
+@app.post(
+    "/municipal/workflows/{workflow_id}/transitions",
+    response_model=MunicipalWorkflow,
+)
+def transition_municipal_workflow(
+    request: Request,
+    workflow_id: str,
+    payload: WorkflowTransitionInput,
+) -> MunicipalWorkflow:
+    try:
+        return request.app.state.municipal_service.transition(workflow_id, payload)
+    except WorkflowNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Workflow not found") from error
+    except InvalidTransitionError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get(
+    "/municipal/workflows/{workflow_id}/escalation",
+    response_model=EscalationCheckOutput,
+)
+def check_municipal_escalation(
+    request: Request, workflow_id: str
+) -> EscalationCheckOutput:
+    try:
+        return request.app.state.municipal_service.check_escalation(workflow_id)
+    except WorkflowNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Workflow not found") from error

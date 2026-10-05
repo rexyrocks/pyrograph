@@ -1,5 +1,12 @@
 # Scoping & Data Recon
 
+> Historical research notes, superseded for evaluation by the September 2026
+> audit. LOYO exclusion of the target year does not prevent held-out future
+> years influencing training climatology. The current CLI uses a fixed
+> pre-training reference and separate selection/test periods; see
+> `evaluation-retrospective-v2.json`. Neither experiment validates advance
+> forecast skill, mortality prediction or official IMD declarations.
+
 ## Intro
 
 This covers the scoping and data groundwork for SIH26083 (Extreme Heatwave

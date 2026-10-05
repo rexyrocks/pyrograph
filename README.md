@@ -1,29 +1,51 @@
 # SIH26083 — Extreme Heatwave Early Warning System
 
-Classical machine-learning training pipeline for binary daily heatwave detection
-in Jaipur. It trains Random Forest and XGBoost models, compares them by CSI, and
-saves the better model together with its exact inference feature contract.
+Preliminary Jaipur heat-hazard classifier and uncalibrated planning-index demo.
+Both API entrypoints now use the integrity-checked `artifacts/jaipur-fixed-v2`
+bundle (fixed 2015–2018 reference; fit 2019–2021; select 2022; test 2023–2024).
+This is a local serving upgrade, not independent advance-forecast validation or
+a deployment. Mortality probability remains unavailable.
+
+Prediction responses include model version, reference period and daily WBGT/UTCI
+estimates. These use approximate radiant temperature and daily aggregate weather;
+they are not validated peak-exposure or health measurements. UTCI outside its
+applicability limits is null with an explicit availability status.
+
+See `docs/milestone-2.md` for current phase gates and `docs/milestone-1.md` for the first serving milestone.
+A 2025 fixed-lead pilot found the forecast-temperature threshold baseline ahead of the classifier on CSI at leads 3–5; see `docs/data/fixed-lead-2025-pilot.md`.
+An individual-run 9-km ECMWF replay for every May 2024 and May 2025 initialization also found no classifier advantage on the positive 2024 cases; May 2025 had no positive labels in its scored targets. See `docs/data/single-run-2024-2025-pilot.md` for the precise lead and publication assumptions.
+A locked April–June 2026 replay retrieved 91 runs but had no positive ERA5 heatwave labels in its scored targets; 13 runs per lead were excluded for impossible radiation or missing hourly values. See `docs/data/single-run-2026-result.md`. Detection skill remains unproven.
 
 ## Run
 
 ```bash
 python3 heatwave_pipeline.py \
   --data /path/to/jaipur_daily_2015_2024.csv \
-  --output-dir outputs
+  --output-dir work/retrospective-v2
 ```
 
-The training period is 2015–2022 and the test period is 2023–2024. The first
-three records are excluded after lag creation. Labels use a circular calendar
-day ±7-day leave-one-year-out climatology: P95 defines `heatwave`, while P98
-defines the separate post-hoc `severe` flag. No persistence rule is included in
-training.
+The corrected evaluation fixes the climate reference to 2015–2018, trains on
+2019–2021, selects on 2022, and tests only the selected model on 2023–2024.
+It uses realised daily weather and a short ±7-day percentile reference. The
+period has been inspected in earlier experiments; fresh external validation is
+still required. This command writes an evaluation report. Export a new immutable serving bundle with:
+
+```bash
+python3 -m scripts.export_serving --data data/jaipur_daily_2015_2024.csv --bundle-dir artifacts/NEW_VERSION
+```
+
+The exporter never deploys and refuses to overwrite an existing bundle. See `docs/evaluation-retrospective-v2.json` and `docs/demo-readiness.md`.
 
 `wbgt` and `utci` are produced by the separate `thermal` pipeline for heat-stress
 reporting and dashboard use. They intentionally remain outside the 17-feature
-heatwave classifier because adding them did not improve the selected XGBoost
-model's test CSI, recall, precision, or F1.
+heatwave classifier. Earlier feature decisions used the legacy experiment's
+test period and must not be represented as independent final validation.
 
-## Outputs
+## Legacy serving artifacts in outputs/
+
+These are retained for reproducibility and are no longer loaded by either API. Their original LOYO preprocessing
+included held-out years in training climatology and used test CSI to select
+the model. `evaluation_metrics.json` explicitly records those limitations.
 
 - `best_heatwave_model.joblib` — model selected by highest test CSI
 - `feature_names.json` — exact ordered inference features
@@ -42,7 +64,7 @@ On macOS, XGBoost also requires the OpenMP runtime (`brew install libomp`).
 Start the API from the project directory:
 
 ```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 Interactive API documentation is available at `http://localhost:8000/docs`.
@@ -53,9 +75,25 @@ The service provides:
 - `POST /predict` — one binary prediction with optional previous-day context
 - `POST /predict/batch` — chronological predictions with automatic two-day
   persistence checks; date gaps reset the persistence state
+- `POST /risk/assess` — transparent 0–100 heat-health planning index combining
+  heat hazard and aggregate demographic vulnerability
+- `GET /demographics/wards` — validated synthetic ward fixtures with explicit
+  missing fields and non-operational provenance
+- `POST /alerts/dispatch` and `GET /alerts/{alert_id}` — offline SMS/WhatsApp
+  simulation with idempotency, deduplication, retries, and delivery receipts
+- `/municipal/workflows` — role ownership, acknowledgement, escalation checks,
+  state transitions, and an append-only audit trail
+
+By default, alerts and municipal workflows use in-memory demo services. See
+`docs/operations-demo.md` for their contracts and production limitations.
+Municipal workflows can instead use an opt-in local SQLite file through
+`HEATSHIELD_WORKFLOW_DB`; an external scheduler can invoke
+`python3 -m scripts.escalate_due` with the same path. Alert receipts remain
+in-memory by default, or persist in an offline-only local SQLite file via
+`HEATSHIELD_ALERT_DB`. No real messages are sent.
 
 Clients send the eight raw weather values and six lag values. The backend
-calculates the LOYO climatological normal, P95/P98 thresholds,
+reads the fixed-reference climatological normal and P95/P98 thresholds,
 `tmax_departure`, and cyclical date features. `severe` is true only when the
 binary model predicts heatwave and `tmax` reaches the P98 threshold. An alert
 is triggered only after two consecutive predicted heatwave days.
@@ -63,8 +101,14 @@ is triggered only after two consecutive predicted heatwave days.
 WBGT and UTCI are consumed separately by heat-stress and presentation layers;
 they are not required by the binary prediction endpoints.
 
-Artifact locations can be overridden with `HEATWAVE_MODEL_PATH`,
-`HEATWAVE_FEATURES_PATH`, and `HEATWAVE_CLIMATOLOGY_PATH`. Browser origins are
+The planning index is explicitly uncalibrated and always returns
+`mortality_probability: null`. Annual state mortality totals are not treated as
+training labels for daily local mortality. See
+`docs/mortality-risk-index.md` for its formula, limitations, and calibration
+requirements.
+
+Select an entire versioned bundle with `HEATWAVE_BUNDLE_DIR`. Independent legacy
+artifact overrides are rejected to prevent mixed models and climate references. Browser origins are
 configured as a comma-separated `CORS_ORIGINS` value.
 
 Run the backend tests with:
@@ -73,12 +117,13 @@ Run the backend tests with:
 python3 -m unittest -v
 ```
 
-A deployment-ready `Dockerfile` includes XGBoost's Linux OpenMP dependency.
+The `Dockerfile` includes Linux OpenMP and the synthetic demographic fixture.
+Run `python3 -m scripts.smoke_image` on a Docker-enabled machine before release.
 
 ## Production architecture
 
 The application is deployed across Vercel (Frontend) and Railway (Backend).
-The browser can request only the cached, read-only five-day outlook. A Vercel
+The browser requests the five-day outlook and the shared planning-index API. A Vercel
 server function fetches Open-Meteo data and calls Railway's authenticated batch
 predictor; the Railway key is never exposed to browser JavaScript. Generic
 public prediction proxy routes are deliberately disabled.
@@ -95,21 +140,26 @@ public prediction proxy routes are deliberately disabled.
 ### Open-Meteo Integration & Lag Bootstrapping
 
 The Vercel proxy fetches live weather data for Jaipur (26.91°N, 75.79°E) from Open-Meteo:
-1. **Historical Weather API**: Fetches the past 3 days of observations to construct true historical lag features (`tmax_lag1/2/3`, `tmin_lag1/2/3`) for Day 1 of the outlook.
+1. **Historical Weather API**: Fetches the past 3 days of gridded analysis/reanalysis to construct historical lag features (`tmax_lag1/2/3`, `tmin_lag1/2/3`) for Day 1. These are not necessarily station observations; availability depends on the upstream model.
 2. **Forecast API**: Fetches the raw weather values for the 5-day outlook.
 
 The pressure input uses Open-Meteo's `surface_pressure_mean` (not sea-level
 pressure) because it matches the approximately 960 hPa distribution used to
 train the Jaipur model at the city's elevation.
 
-**Known Limitation - Lag Bootstrapping**: Because the model strictly requires 3 days of lag features (previous day temperatures), Day 1 uses true historical observations. For Days 2–5, the preceding days are in the future, so the Vercel helper **bootstraps** their lag features by feeding the prior days' *forecasted* temperatures into the subsequent days' lag inputs. This allows all 5 days to be run through the live model prediction.
+**Known limitation — lag bootstrapping:** Day 1 uses historical analysis values. Days 2–5 use preceding forecast temperatures as lag inputs. Lead-time performance has not been validated. Day 1 persistence remains unknown when no prior-day classification is supplied.
+
+The frontend distinguishes live, loading/unavailable and explicit synthetic
+sample modes. Forecasts older than 30 minutes, incorrect dates and malformed
+responses are rejected. The page refreshes every minute and uses the risk API
+at full input precision. Municipal operations are demonstrated via the local
+API rehearsal; the page does not claim an implemented operations console.
 
 ## Legacy Google Cloud Run deployment
 
 > **Note:** Railway is now the active backend deployment. This section remains for historical reference.
 
-The production container uses the lightweight native XGBoost Booster artifact,
-not the training-time joblib bundle. Deploy it from this directory with:
+The production container uses the native XGBoost bundle and thermal dependencies. Deploy it from this directory with:
 
 ```bash
 gcloud run deploy heatshield-jaipur-api \

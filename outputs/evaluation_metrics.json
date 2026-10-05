@@ -1,4 +1,6 @@
 {
+  "status": "legacy_preliminary_retrospective_contaminated_evaluation",
+  "limitations": ["LOYO preprocessing includes held-out years in training climatology", "The test period was also used for model selection", "Realised-weather classification does not validate advance forecast skill or mortality risk"],
   "selected_model": "xgboost",
   "selection_metric": "csi",
   "split": {

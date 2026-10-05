@@ -1,0 +1,7 @@
+column_name,data_type,description,geographic_resolution,source,missing_data_handling
+ward_id,string,Unique identifier for the ward (e.g. JMC-2025-001),ward,Rajasthan Gazette,required
+population_total,integer,Total population of the ward,ward,Rajasthan Gazette,required
+elderly_pct,float,Percentage of population over 65,district,Census 2011/Projections,fallback_to_regional_estimate
+child_pct,float,Percentage of population under 5,district,Census 2011/Projections,fallback_to_regional_estimate
+outdoor_worker_pct,float,Percentage of working population in outdoor manual labor,district,PLFS,null_if_unavailable
+informal_housing_pct,float,Percentage of households with informal roofing,district,NFHS-5,null_if_unavailable

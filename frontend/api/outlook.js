@@ -13,6 +13,11 @@ const DAILY_FIELDS = [
   'shortwave_radiation_sum',
   'cloud_cover_mean',
 ];
+const DAILY_UNITS = {
+  temperature_2m_max: '°C', temperature_2m_min: '°C', temperature_2m_mean: '°C',
+  relative_humidity_2m_mean: '%', wind_speed_10m_max: 'km/h',
+  surface_pressure_mean: 'hPa', shortwave_radiation_sum: 'MJ/m²', cloud_cover_mean: '%',
+};
 
 function jaipurDate() {
   const parts = new Intl.DateTimeFormat('en', {
@@ -31,18 +36,19 @@ function shiftDate(isoDate, offsetDays) {
   return date.toISOString().slice(0, 10);
 }
 
-function assertDaily(payload, fields, expectedDays) {
-  if (!payload?.daily || payload.daily.time?.length !== expectedDays) {
-    throw new Error('Unexpected Open-Meteo response length');
+export function assertDaily(payload, fields, expectedDates) {
+  if (payload?.timezone !== TIMEZONE || !payload?.daily ||
+      !Array.isArray(payload.daily.time) || payload.daily.time.length !== expectedDates.length ||
+      payload.daily.time.some((date, index) => date !== expectedDates[index])) {
+    throw new Error('Open-Meteo local dates or timezone do not match the request');
   }
   for (const field of fields) {
     const values = payload.daily[field];
-    if (
-      !Array.isArray(values) ||
-      values.length !== expectedDays ||
+    if (payload.daily_units?.[field] !== DAILY_UNITS[field] ||
+      !Array.isArray(values) || values.length !== expectedDates.length ||
       values.some((value) => typeof value !== 'number' || !Number.isFinite(value))
     ) {
-      throw new Error(`Open-Meteo field unavailable: ${field}`);
+      throw new Error(`Open-Meteo field unavailable or has unexpected units: ${field}`);
     }
   }
 }
@@ -87,8 +93,10 @@ export default async function handler(request, response) {
       fetchJson(`https://archive-api.open-meteo.com/v1/archive?${historyQuery}`),
       fetchJson(`https://api.open-meteo.com/v1/forecast?${forecastQuery}`),
     ]);
-    assertDaily(history, ['temperature_2m_max', 'temperature_2m_min'], 3);
-    assertDaily(forecast, DAILY_FIELDS, DAYS);
+    assertDaily(history, ['temperature_2m_max', 'temperature_2m_min'],
+      Array.from({ length: 3 }, (_, index) => shiftDate(historyStart, index)));
+    assertDaily(forecast, DAILY_FIELDS,
+      Array.from({ length: DAYS }, (_, index) => shiftDate(today, index)));
 
     const tmaxHistory = [...history.daily.temperature_2m_max];
     const tminHistory = [...history.daily.temperature_2m_min];

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "model_version": "jaipur-fixed-v2",
+  "model_name": "XGBClassifier",
+  "features": [
+    "tmax",
+    "tmin",
+    "tmean",
+    "rh_mean",
+    "wind_speed_max",
+    "pressure_mean",
+    "solar_radiation_sum",
+    "cloud_cover_mean",
+    "tmax_lag1",
+    "tmax_lag2",
+    "tmax_lag3",
+    "tmin_lag1",
+    "tmin_lag2",
+    "tmin_lag3",
+    "tmax_departure",
+    "doy_sin",
+    "doy_cos"
+  ],
+  "target": "heatwave",
+  "prediction_type": "binary",
+  "severe_is_post_hoc_flag": true,
+  "reference_period": "2015-2018",
+  "reference_method": "fixed_calendar_day_plus_minus_7",
+  "location": "Jaipur",
+  "probability_calibrated": false,
+  "validation_status": "preliminary_retrospective_not_forecast_skill",
+  "limitations": [
+    "Uses realised daily weather, not archived issue-time forecasts.",
+    "No probability calibration or mortality outcomes.",
+    "Single location and short climate reference; not official IMD normals.",
+    "The test period has been inspected in earlier experiments; fresh external validation is still needed.",
+    "Historical temperature lags assume a completed prior day; deployment availability requires separate evaluation."
+  ],
+  "training_data_sha256": "5f7c34777b69892c4757b9984fd1e865163debb581d226903b9dba3db0c0bacf",
+  "units": {
+    "temperature": "degC",
+    "wind_speed_max": "km/h",
+    "pressure_mean": "hPa",
+    "solar_radiation_sum": "MJ/m2/day",
+    "rh_mean": "percent",
+    "cloud_cover_mean": "percent"
+  },
+  "sha256": {
+    "model.json": "0a7681fcca8112257e7d648cc0e11d44599413d94eceb4f34ee28dd821b6c203",
+    "reference.json": "d86d30b7947b315f11c60e84e81dd6dc92e2768c457415451b8fe3ae48e43a98",
+    "evaluation.json": "d149ba5a60903eeeb838872b7d88d58a4c1d70356bde358cc2e9f01f4b105fdb"
+  }
+}
