@@ -30,7 +30,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { validateOutlook } from '@/lib/outlook-validation';
-import demographicsCsv from '../../data/processed/fixtures_synthetic_wards.csv?raw';
+import demographicsCsv from '../data/fixtures_synthetic_wards.csv?raw';
 
 type Risk = 'Moderate' | 'High' | 'Severe';
 type ImpactBand = 'Low' | Risk;
@@ -106,6 +106,16 @@ const riskClass: Record<Risk, string> = {
   High: 'risk-high',
   Severe: 'risk-severe',
 };
+
+const predictionLabel: Record<Risk, string> = {
+  Moderate: 'No heatwave predicted',
+  High: 'Heatwave predicted',
+  Severe: 'Severe heatwave predicted',
+};
+
+function formatModelEstimate(percent: number) {
+  return percent > 0 && percent < 0.1 ? '<0.1%' : `${percent.toFixed(1)}%`;
+}
 
 type VulnerabilityProfile = {
   olderAdults: number;
@@ -346,7 +356,7 @@ export default function Home() {
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <Badge className="warning-badge"><TriangleAlert size={14} /> {sampleMode ? 'Sample' : 'Preliminary'} {selected.risk.toLowerCase()} hazard</Badge>
+            <Badge className="warning-badge"><TriangleAlert size={14} /> {sampleMode ? 'Sample' : 'Preliminary'} · {predictionLabel[selected.risk]}</Badge>
             <h1>{sampleMode ? 'Explore a sample' : 'Jaipur forecast'}<br />heat scenario.</h1>
             <p>
               {selected.risk === 'Moderate'
@@ -367,7 +377,7 @@ export default function Home() {
                 <SheetContent className="reason-sheet">
                   <SheetHeader>
                     <Badge className="sheet-badge">Preliminary hazard logic</Badge>
-                    <SheetTitle>Why Jaipur is at {selected.risk.toLowerCase()} risk</SheetTitle>
+                    <SheetTitle>How this prediction was made</SheetTitle>
                     <SheetDescription>
                       The warning combines the model probability with Jaipur&apos;s calendar-day climate thresholds.
                     </SheetDescription>
@@ -378,7 +388,7 @@ export default function Home() {
                     <div className="threshold-card"><span>Fixed-reference P95 threshold</span><b>{selected.p95.toFixed(1)}°C</b></div>
                     <p>Model: {selected.modelVersion ?? "Synthetic scenario"} · Reference: 2015–2018</p>
                     <ul className="reason-list">
-                      <li><span>Uncalibrated model estimate</span><b>{selected.probability.toFixed(1)}%</b></li>
+                      <li><span>Uncalibrated model estimate</span><b>{formatModelEstimate(selected.probability)}</b></li>
                       <li><span>Forecast-temperature rule</span><b>{temperatureRuleFlags ? 'P95 crossed' : 'Below P95'}</b></li>
                       <li><span>Departure from normal</span><b>{selected.temperature - selected.normal >= 0 ? '+' : ''}{(selected.temperature - selected.normal).toFixed(1)}°C</b></li>
                       <li><span>Persistence check</span><b>{selected.persistenceMet === true ? 'Met · day 2 of 2' : selected.persistenceMet === false ? 'Not met' : 'Pending prior day'}</b></li>
@@ -401,8 +411,8 @@ export default function Home() {
             <div className="temp-topline"><span>Expected maximum</span><Sun size={22} /></div>
             <div className="temperature">{selected.temperature.toFixed(1)}<sup>°C</sup></div>
             <div className="risk-line">
-              <span className={`risk-pill ${riskClass[selected.risk]}`}>{selected.risk} risk</span>
-              <span>{selected.probability.toFixed(1)}% uncalibrated model estimate</span>
+              <span className={`risk-pill ${riskClass[selected.risk]}`}>{predictionLabel[selected.risk]}</span>
+              <span>{formatModelEstimate(selected.probability)} uncalibrated model estimate</span>
             </div>
             <div className="confidence-track"><span style={{ width: `${selected.probability}%` }} /></div>
             <div className="mini-stats">
@@ -450,8 +460,8 @@ export default function Home() {
                 >
                   <span className="forecast-day"><b>{item.day}</b><small>{item.date}</small></span>
                   <strong className="forecast-temp">{item.temperature.toFixed(1)}°</strong>
-                  <span className={`forecast-risk ${riskClass[item.risk]}`}>{item.risk}</span>
-                  <span className="forecast-prob"><i style={{ width: `${item.probability}%` }} />{item.probability.toFixed(1)}% model estimate</span>
+                  <span className={`forecast-risk ${riskClass[item.risk]}`}>{predictionLabel[item.risk]}</span>
+                  <span className="forecast-prob"><i style={{ width: `${item.probability}%` }} />{formatModelEstimate(item.probability)} model estimate</span>
                   <small className="forecast-note">{item.note}</small>
                 </button>
               ))}
